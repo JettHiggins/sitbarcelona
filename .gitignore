@@ -1,0 +1,15 @@
+# Licensed match assets and generated model output
+data/
+*.mp4
+*.mov
+*.mkv
+*.csv
+*.atd
+*.parquet
+*.npy
+*.npz
+
+# Local tooling
+.playwright-cli/
+__pycache__/
+.DS_Store

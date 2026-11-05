@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Possession viewer</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="viewer">
+    <div class="stage" id="stage">
+      <video id="video" playsinline preload="metadata"></video>
+      <div class="upload-actions">
+        <button class="empty-open" id="open-video" type="button">Open video</button>
+        <button id="reset-video" class="reset-button" type="button" aria-label="Remove video" title="Remove video" hidden>↶</button>
+      </div>
+      <input id="video-file" type="file" accept="video/*" hidden>
+      <input id="prediction-file" type="file" accept=".csv,text/csv" hidden>
+      <p id="source-message" role="status" hidden></p>
+      <aside class="decision-overlay" aria-label="Possession decision">
+        <div class="prediction-control">
+          <button class="empty-open" id="open-predictions" type="button">Predictions CSV</button>
+          <span id="decision-symbol" class="decision-symbol x" aria-label="Current prediction" hidden>—</span>
+          <button id="reset-predictions" class="reset-button" type="button" aria-label="Remove predictions" title="Remove predictions" hidden>↶</button>
+        </div>
+        <canvas id="trace" role="img" aria-label="Possession decisions, ten seconds either side of the current frame"></canvas>
+      </aside>
+    </div>
+    <div class="controls">
+      <div class="transport">
+        <span class="timecode" id="timecode">00:00:00</span>
+        <div class="playback-buttons">
+          <button id="slower" type="button" aria-label="Decrease playback speed" title="Decrease playback speed">«</button>
+          <button id="back-frame" type="button" aria-label="Back one frame" title="Back one frame (←)">‹</button>
+          <button id="play" type="button" aria-label="Play" title="Play / pause (Space)">▶</button>
+          <button id="forward-frame" type="button" aria-label="Forward one frame" title="Forward one frame (→)">›</button>
+          <button id="faster" type="button" aria-label="Increase playback speed" title="Increase playback speed">»</button>
+        </div>
+        <div class="utilities">
+          <button id="frame-check" type="button" aria-label="Frame count warning" hidden>⚠</button>
+          <span id="playback-rate" aria-live="polite">1×</span>
+          <input id="frame-input" type="number" aria-label="Go to frame" title="Go to frame" min="0" max="199318" value="0">
+
+        </div>
+      </div>
+      <div class="timeline-wrap">
+        <canvas id="timeline" role="img" aria-label="Prediction timeline"></canvas>
+        <div class="seek-track"><div id="seek-progress"></div></div>
+        <div id="timeline-playhead"></div>
+        <input id="seek" type="range" min="0" max="199318" value="0" aria-label="Seek video frame">
+      </div>
+    </div>
+  </main>
+</body>
+</html>
