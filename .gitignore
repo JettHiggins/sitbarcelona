@@ -13,3 +13,10 @@ data/
 .playwright-cli/
 __pycache__/
 .DS_Store
+
+# Pipeline intermediates and local dependencies
+cache/
+.deps/
+.venv/
+*.avi
+*.webm
