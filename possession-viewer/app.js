@@ -538,7 +538,7 @@ async function startPlayback(direction = state.direction) {
     state.reversing = true;
     updatePlaybackControls();
     const cache = state.reverseCache;
-    reverseStatus('Preparing reverse…');
+    reverseStatus();
     try {
       if (!cache) throw new Error('No decoded-frame cache available.');
       await cache.warm(startFrame);
@@ -565,7 +565,7 @@ async function startPlayback(direction = state.direction) {
             }
             // Hold the displayed frame while refilling rather than jumping the match clock.
             carry = 0;
-            reverseStatus('Preparing reverse…');
+            reverseStatus();
           } else {
             carry -= steps;
             showCachedFrame(frame, entry);

@@ -66,8 +66,8 @@ memory beyond that. Full 1920×1080 detail is preserved. Larger sources are scal
 1920-pixel edge for cached reverse; normal forward playback keeps the original resolution.
 
 Paused positions are warmed in the background. Reverse prefetches earlier sections while
-showing cached frames. A short **Preparing reverse…** notice appears on a cold start or if
-prefetch cannot keep up, especially at high reverse speeds. While refilling, the image and
+showing cached frames. Cold starts or refills may briefly hold the image, especially at high
+reverse speeds, without displaying a preparation notice. While refilling, the image and
 prediction clock stay on the same frame. Pausing synchronizes the native video once; switching
 forward resumes from the cached position. Seeking, replacing or removing a video cancels stale
 playback work, and replacing/removing it closes the cache's bitmaps and decoder input.
