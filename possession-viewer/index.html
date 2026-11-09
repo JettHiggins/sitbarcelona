@@ -22,10 +22,20 @@
       <aside class="decision-overlay" aria-label="Possession decision">
         <div class="prediction-control">
           <button class="empty-open" id="open-predictions" type="button">Predictions CSV</button>
-          <span id="decision-symbol" class="decision-symbol x" aria-label="Current prediction" hidden>—</span>
+          <div class="prediction-value" id="prediction-value" hidden>
+            <span class="decision-caption">Predicted</span>
+            <span id="decision-symbol" class="decision-symbol x" aria-label="Current prediction" hidden>—</span>
+          </div>
+          <div class="reference-decision" id="reference-decision" hidden>
+            <span class="decision-caption">Expected</span>
+            <span id="expected-symbol" class="expected-symbol">—</span>
+          </div>
           <button id="reset-predictions" class="reset-button" type="button" aria-label="Remove predictions" title="Remove predictions" hidden>↶</button>
         </div>
+        <div id="comparison-status" class="comparison-status" role="status" hidden></div>
         <canvas id="trace" role="img" aria-label="Possession decisions, ten seconds either side of the current frame"></canvas>
+        <div class="trace-legend" id="trace-legend" hidden><span>━ Prediction</span><span>┄ Ground truth</span></div>
+        <button id="jump-reference" class="reference-link" type="button" hidden>Review ground truth ↗</button>
       </aside>
     </div>
     <div class="controls">

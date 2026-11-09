@@ -42,3 +42,28 @@ Do not commit licensed match video or datasets.
 See [pipeline setup and commands](../pipeline/README.md) to generate `lenny-model.csv`,
 `mall-model.csv`, or a model-free `mall-events.csv` locally. Load one using **Predictions CSV**,
 then choose another CSV to compare at the same video frame. Outputs use the same frame timeline.
+
+## Public ground-truth overlay
+
+The public five-minute reference loads automatically: frames **11185–18684** (25 fps).
+Click **Ground truth** beneath the graph to jump to the start. The current expected label appears
+beside the prediction, with a white dashed reference on the local graph. Amber shading marks
+disagreements; an amber border highlights the video while its current prediction differs.
+The full-match timeline shows predictions above, the reference window below, and amber mismatch
+marks between them. These marks include short errors that would otherwise disappear at this scale.
+
+Outside the public window, no expected label or match/mismatch is shown. A prediction of X or a
+missing prediction counts as a disagreement when a reference label exists. Removing predictions
+retains the reference. Reference labels are for visual evaluation only and do not affect pipelines.
+
+`reference/public-ground-truth.json` stores the official public CSV as 21 half-open segments
+(start included, end excluded), with the original source URL and SHA-256. No match video is included.
+
+Browser regression checks (with `playwright-cli` installed and the viewer served on port 8080):
+
+```bash
+playwright-cli open http://localhost:8080
+playwright-cli run-code --filename=possession-viewer/tests/ground-truth.js
+```
+
+Run those commands from the repository root. The two tiny CSV fixtures are synthetic.

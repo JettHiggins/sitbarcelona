@@ -18,3 +18,6 @@ __pycache__/
 pipeline/.venv/
 pipeline/cache/
 pipeline/reports/
+
+# Tiny synthetic viewer regression fixtures
+!possession-viewer/tests/fixtures/*.csv

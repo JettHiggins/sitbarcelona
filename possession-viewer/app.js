@@ -10,7 +10,7 @@ const LABELS = {
 
 const $ = id => document.getElementById(id);
 const video = $('video');
-const state = { frame: 0, predictions: null, videoUrl: null, hasVideo: false };
+const state = { frame: 0, predictions: null, videoUrl: null, hasVideo: false, reference: null, referenceError: null };
 
 function setMessage(message, error = false) {
   $('source-message').textContent = message;
@@ -54,6 +54,7 @@ function setFrame(frame) {
   $('decision-symbol').textContent = state.predictions ? code : '—';
   $('decision-symbol').className = `decision-symbol ${code.toLowerCase()}`;
   $('decision-symbol').setAttribute('aria-label', state.predictions ? LABELS[code].name : 'No predictions loaded');
+  updateComparison();
   drawTrace();
 }
 
@@ -95,6 +96,7 @@ async function loadCsv(file) {
     state.predictions = parsed;
     $('open-predictions').hidden = true;
     $('decision-symbol').hidden = false;
+    $('prediction-value').hidden = false;
     $('reset-predictions').hidden = false;
     updateFrameCheck();
     $('open-predictions').title = file.name;
@@ -132,20 +134,88 @@ function prepareCanvas(canvas) {
   return { ctx, width, height };
 }
 
+function referenceAt(frame) {
+  return state.reference?.labels[frame] || null;
+}
+
+function updateComparison() {
+  const expected = referenceAt(state.frame);
+  const prediction = state.predictions?.labels[state.frame];
+  const comparable = Boolean(expected && state.predictions);
+  const mismatch = comparable && prediction !== expected;
+  $('reference-decision').hidden = !expected;
+  $('expected-symbol').textContent = expected || '—';
+  $('expected-symbol').style.color = expected ? LABELS[expected].color : '';
+  $('expected-symbol').setAttribute('aria-label', expected ? `Ground truth: ${LABELS[expected].name}` : 'No ground truth for this frame');
+  $('stage').classList.toggle('prediction-mismatch', mismatch);
+  $('comparison-status').hidden = !comparable;
+  $('comparison-status').classList.toggle('mismatch', mismatch);
+  const statusText = mismatch ? 'Mismatch' : 'Matches ground truth';
+  if ($('comparison-status').textContent !== statusText) $('comparison-status').textContent = statusText;
+  $('trace-legend').hidden = !state.reference;
+  $('jump-reference').hidden = !state.reference && !state.referenceError;
+}
+
+async function loadReference() {
+  try {
+    const response = await fetch('reference/public-ground-truth.json');
+    if (!response.ok) throw new Error('Could not load public ground truth');
+    const data = await response.json();
+    if (data.fps !== FPS || data.frame_count !== FRAME_COUNT || !Array.isArray(data.segments) || !data.segments.length) {
+      throw new Error('Ground-truth timeline does not match this video');
+    }
+    const labels = new Array(FRAME_COUNT);
+    let lastEnd = 0;
+    for (const [start, end, code] of data.segments) {
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < lastEnd || end <= start || end > FRAME_COUNT || !['H', 'A', 'D'].includes(code)) {
+        throw new Error('Invalid ground-truth segment');
+      }
+      labels.fill(code, start, end);
+      lastEnd = end;
+    }
+    state.reference = { labels, segments: data.segments, first: data.segments[0][0] };
+    const first = data.segments[0][0], last = data.segments.at(-1)[1] - 1;
+    $('jump-reference').textContent = `Ground truth · ${formatTime(first / FPS)}–${formatTime((last + 1) / FPS)} ↗`;
+    $('jump-reference').title = 'Jump to the public five-minute reference window';
+    setFrame(state.frame);
+    drawTimeline();
+  } catch (error) {
+    state.referenceError = error.message;
+    $('jump-reference').hidden = false;
+    $('jump-reference').textContent = 'Ground truth unavailable';
+    $('jump-reference').disabled = true;
+    $('jump-reference').title = error.message;
+  }
+}
+
 function drawTimeline() {
   const { ctx, width, height } = prepareCanvas($('timeline'));
-  ctx.fillStyle = '#333'; ctx.fillRect(0, 0, width, height);
-  if (!state.predictions) return;
-  // Sampling at each screen pixel keeps rendering fast for the full 199k-frame match.
-  for (let x = 0; x < width; x++) {
-    const frame = Math.min(LAST_FRAME, Math.floor((x + .5) / width * FRAME_COUNT));
-    ctx.fillStyle = LABELS[state.predictions.labels[frame] || 'X'].color;
-    ctx.fillRect(x, 0, 1, height);
+  ctx.fillStyle = '#333'; ctx.fillRect(0, 0, width, 4);
+  // Predictions above; the public reference occupies only its actual labeled interval below.
+  if (state.predictions) {
+    for (let x = 0; x < width; x++) {
+      const frame = Math.min(LAST_FRAME, Math.floor((x + .5) / width * FRAME_COUNT));
+      ctx.fillStyle = LABELS[state.predictions.labels[frame] || 'X'].color;
+      ctx.fillRect(x, 0, 1, 4);
+    }
   }
-  // The public graded halves are marked without implying a ground-truth label.
-  ctx.fillStyle = '#0005';
-  for (const [start, end] of [[0, 11185], [90652, 110808], [190198, FRAME_COUNT]]) {
-    ctx.fillRect(start / FRAME_COUNT * width, 0, (end - start) / FRAME_COUNT * width, height);
+  if (!state.reference) return;
+  for (const [start, end, code] of state.reference.segments) {
+    ctx.fillStyle = LABELS[code].color;
+    ctx.fillRect(start / FRAME_COUNT * width, 8, Math.max(1, (end - start) / FRAME_COUNT * width), height - 8);
+  }
+  // Aggregate each pixel's frames so even a short mismatch remains visible at full-match scale.
+  if (state.predictions) {
+    for (let x = 0; x < width; x++) {
+      const start = Math.floor(x / width * FRAME_COUNT);
+      const end = Math.min(FRAME_COUNT, Math.ceil((x + 1) / width * FRAME_COUNT));
+      for (let frame = start; frame < end; frame++) {
+        const truth = referenceAt(frame);
+        if (truth && truth !== state.predictions.labels[frame]) {
+          ctx.fillStyle = '#ffb36b'; ctx.fillRect(x, 5, 1, 2); break;
+        }
+      }
+    }
   }
 }
 
@@ -159,12 +229,20 @@ function drawTrace() {
   }
   ctx.fillStyle = '#aaa'; ctx.font = '9px monospace';
   ['A','D','H','X'].forEach((code, index) => { ctx.fillStyle = LABELS[code].color; ctx.fillText(code, 4, pad + index * innerHeight / 3 + 3); });
+  const frameAtX = x => state.frame + Math.round((x - 16) / Math.max(1, width - 17) * 500) - 250;
+  if (state.predictions && state.reference) {
+    for (let x = 16; x < width; x++) {
+      const frame = frameAtX(x), truth = referenceAt(frame);
+      if (truth && state.predictions.labels[frame] !== truth) {
+        ctx.fillStyle = '#ffb36b22'; ctx.fillRect(x, 0, 1, height);
+      }
+    }
+  }
   const labels = state.predictions?.labels;
   if (labels) {
     let previous = null;
     for (let x = 16; x < width; x++) {
-      const offset = Math.round((x - 16) / Math.max(1, width - 17) * 500) - 250;
-      const frame = Math.max(0, Math.min(LAST_FRAME, state.frame + offset));
+      const frame = Math.max(0, Math.min(LAST_FRAME, frameAtX(x)));
       const code = labels[frame] || 'X';
       const y = pad + LABELS[code].level * innerHeight / 3;
       ctx.strokeStyle = LABELS[code].color; ctx.lineWidth = 2;
@@ -176,6 +254,19 @@ function drawTrace() {
       previous = { y };
     }
   }
+  // White dashed reference line: gaps stay blank, including outside the public window.
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  let previousTruth = null;
+  for (let x = 16; x < width; x++) {
+    const truth = referenceAt(frameAtX(x));
+    if (!truth) { previousTruth = null; continue; }
+    const y = pad + LABELS[truth].level * innerHeight / 3;
+    if (previousTruth) { ctx.lineTo(x, previousTruth.y); ctx.lineTo(x, y); }
+    else ctx.moveTo(x, y);
+    previousTruth = { y };
+  }
+  ctx.stroke(); ctx.setLineDash([]);
   ctx.strokeStyle = '#ffffffcc'; ctx.lineWidth = 1;
   const nowX = 16 + (width - 17) / 2;
   ctx.beginPath(); ctx.moveTo(nowX, 0); ctx.lineTo(nowX, height); ctx.stroke();
@@ -258,6 +349,7 @@ $('reset-predictions').addEventListener('click', () => {
   $('open-predictions').hidden = false;
   $('open-predictions').removeAttribute('title');
   $('decision-symbol').hidden = true;
+  $('prediction-value').hidden = true;
   $('reset-predictions').hidden = true;
   updateFrameCheck();
   setFrame(state.frame);
@@ -277,3 +369,8 @@ document.addEventListener('keydown', event => {
 });
 window.addEventListener('resize', () => { drawTimeline(); drawTrace(); });
 setFrame(0); drawTimeline();
+
+$('jump-reference').addEventListener('click', () => {
+  if (state.reference) { video.pause(); seekToFrame(state.reference.first); }
+});
+loadReference();
