@@ -21,7 +21,7 @@ async page => {
   await page.locator('#slower').click();
   check(await page.evaluate(() => state.zoom) === 1, 'Speed changes do not affect zoom');
   await page.locator('#play').click();
-  await page.waitForFunction(() => state.reversing && video.currentTime < 3.6);
+  await page.waitForFunction(() => state.reversing && state.frame < 90);
   check(await page.locator('#play').getAttribute('aria-label') === 'Pause', 'Reverse playback shows pause');
   await page.locator('#play').click();
   await page.waitForFunction(() => !video.seeking);
@@ -30,15 +30,15 @@ async page => {
   check(await page.evaluate(() => !state.reversing && video.paused), 'Pause stops reverse loop');
   check(Math.abs(await page.evaluate(() => video.currentTime) - pausedTime) < 0.001, 'Paused reverse stays at the same time');
   await page.locator('#play').click();
-  await page.waitForFunction(time => video.currentTime < time - 0.12, pausedTime);
+  await page.waitForFunction(time => state.frame / FPS < time - 0.12, pausedTime);
   await page.locator('#back-frame').click();
   check(await page.evaluate(() => !state.reversing && video.paused), 'Frame stepping stops continuous reverse');
   await seek(90);
   await page.locator('#playback-rate').selectOption('-0.25');
   await page.locator('#play').click();
-  const slowStart = await page.evaluate(() => video.currentTime);
+  const slowStart = await page.evaluate(() => state.frame / FPS);
   await page.waitForTimeout(850);
-  const slowEnd = await page.evaluate(() => video.currentTime);
+  const slowEnd = await page.evaluate(() => state.frame / FPS);
   check(slowStart > slowEnd && slowStart - slowEnd < 0.5, 'Quarter-speed reverse moves slowly');
   await page.locator('#faster').click();
   await page.waitForFunction(() => !video.paused && state.direction === 1 && !state.reversing);

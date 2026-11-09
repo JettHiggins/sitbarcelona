@@ -16,6 +16,8 @@ const state = {
   reference: null, referenceError: null, predictionSource: '', csvLoadVersion: 0,
   direction: 1, speed: 1, reversing: false, reverseTimer: null, playVersion: 0,
   zoom: 1, panX: 0, panY: 0,
+  reverseCache: null, cacheVisible: false, reverseMode: null, warmTimer: null,
+  videoFile: null, cancelNativeSeek: null, starting: false,
 };
 
 function setMessage(message, error = false) {
@@ -65,10 +67,12 @@ function setFrame(frame) {
 }
 
 function seekToFrame(frame, keepPlaying = false) {
-  if (!keepPlaying) pausePlayback();
+  if (!keepPlaying) pausePlayback(false);
   frame = Math.max(0, Math.min(LAST_FRAME, Math.floor(Number(frame)) || 0));
   if (state.hasVideo) video.currentTime = frame / FPS;
+  hideCachedFrame();
   setFrame(frame);
+  scheduleReverseWarm();
 }
 
 function parseCsv(text, filename) {
@@ -165,12 +169,14 @@ async function loadCsv(file, source = 'local') {
   }
 }
 
-function loadVideo(source, label, objectUrl = false) {
+function loadVideo(source, label, objectUrl = false, file = null) {
+  pausePlayback(false);
+  clearReverseCache();
+  state.videoFile = file;
   if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
   state.videoUrl = objectUrl ? source : null;
   state.hasVideo = false;
   updateFrameCheck();
-  pausePlayback();
   state.direction = 1;
   setPlaybackRate(1);
   resetZoom();
@@ -331,7 +337,7 @@ function drawTrace() {
 }
 
 function updateFromVideo() {
-  if (!state.hasVideo) return;
+  if (!state.hasVideo || state.cacheVisible) return;
   setFrame(Math.floor(video.currentTime * FPS + 0.00001));
 }
 
@@ -342,25 +348,30 @@ video.addEventListener('loadedmetadata', () => {
   $('open-video').hidden = true;
   $('reset-video').hidden = false;
   $('zoom-controls').hidden = false;
+  if (state.videoFile) {
+    state.reverseCache = new ReverseFrameCache(state.videoFile, { fps: FPS });
+    scheduleReverseWarm();
+  }
   applyZoom();
   setMessage('');
   updateFromVideo();
 });
 video.addEventListener('error', () => {
-  pausePlayback();
+  pausePlayback(false);
+  clearReverseCache();
   $('zoom-controls').hidden = true;
   state.hasVideo = false;
   $('stage').classList.remove('has-video');
   setMessage('Video could not play. Choose a browser-compatible video file.', true);
 });
 video.addEventListener('timeupdate', updateFromVideo);
-video.addEventListener('seeked', updateFromVideo);
+video.addEventListener('seeked', () => { updateFromVideo(); scheduleReverseWarm(); });
 video.addEventListener('play', updatePlaybackControls);
-video.addEventListener('pause', updatePlaybackControls);
+video.addEventListener('pause', () => { updatePlaybackControls(); scheduleReverseWarm(); });
 video.addEventListener('ended', updatePlaybackControls);
 if (video.requestVideoFrameCallback) {
   const onVideoFrame = (_, metadata) => {
-    if (state.hasVideo) setFrame(Math.floor(metadata.mediaTime * FPS + 0.00001));
+    if (state.hasVideo && !state.cacheVisible) setFrame(Math.floor(metadata.mediaTime * FPS + 0.00001));
     video.requestVideoFrameCallback(onVideoFrame);
   };
   video.requestVideoFrameCallback(onVideoFrame);
@@ -384,11 +395,11 @@ $('prediction-select').addEventListener('change', event => {
 $('open-video').addEventListener('click', () => $('video-file').click());
 $('video-file').addEventListener('change', event => {
   const file = event.target.files[0];
-  if (file) { $('open-video').title = file.name; loadVideo(URL.createObjectURL(file), file.name, true); }
+  if (file) { $('open-video').title = file.name; loadVideo(URL.createObjectURL(file), file.name, true, file); }
 });
 $('prediction-file').addEventListener('change', event => loadCsv(event.target.files[0]));
 function updatePlaybackControls() {
-  const playing = state.reversing || !video.paused;
+  const playing = state.starting || state.reversing || !video.paused;
   $('play').textContent = playing ? 'Ⅱ' : '▶';
   $('play').setAttribute('aria-label', playing ? 'Pause' : state.direction < 0 ? 'Play in reverse' : 'Play');
   const rate = state.direction * state.speed;
@@ -397,51 +408,197 @@ function updatePlaybackControls() {
   $('playback-rate').value = String(rate);
 }
 
-function pausePlayback() {
+function reverseStatus(message = '') {
+  $('reverse-status').hidden = !message;
+  if ($('reverse-status').textContent !== message) $('reverse-status').textContent = message;
+}
+
+function hideCachedFrame() {
+  state.cacheVisible = false;
+  $('reverse-frame').hidden = true;
+  $('stage').classList.remove('cached-frame');
+}
+
+function clearReverseCache() {
+  clearTimeout(state.warmTimer);
+  state.warmTimer = null;
+  state.reverseCache?.dispose();
+  state.reverseCache = null;
+  state.reverseMode = null;
+  state.videoFile = null;
+  hideCachedFrame();
+  reverseStatus();
+  // Release the display canvas' backing store as well as the cache bitmaps.
+  $('reverse-frame').width = $('reverse-frame').height = 1;
+}
+
+function scheduleReverseWarm() {
+  clearTimeout(state.warmTimer);
+  if (!state.reverseCache || !state.hasVideo || state.reversing || !video.paused) return;
+  const cache = state.reverseCache;
+  state.warmTimer = setTimeout(() => {
+    if (cache === state.reverseCache && !state.reversing && video.paused) cache.warm(state.frame).catch(() => {});
+  }, 120);
+}
+
+function showCachedFrame(frame, entry) {
+  const canvas = $('reverse-frame');
+  if (canvas.width !== entry.bitmap.width || canvas.height !== entry.bitmap.height) {
+    canvas.width = entry.bitmap.width; canvas.height = entry.bitmap.height;
+  }
+  canvas.getContext('2d', { alpha: false }).drawImage(entry.bitmap, 0, 0);
+  state.cacheVisible = true;
+  canvas.hidden = false;
+  $('stage').classList.add('cached-frame');
+  setFrame(frame);
+}
+
+function pausePlayback(sync = true) {
+  state.cancelNativeSeek?.();
   ++state.playVersion;
+  state.starting = false;
   state.reversing = false;
   if (state.reverseTimer !== null) cancelAnimationFrame(state.reverseTimer);
   state.reverseTimer = null;
   video.pause();
+  if (sync && state.cacheVisible && state.hasVideo) video.currentTime = state.frame / FPS;
+  reverseStatus();
   updatePlaybackControls();
 }
 
-function startPlayback(direction = state.direction) {
+function syncNativeFrame(frame, version) {
+  if (!video.seeking && Math.abs(video.currentTime - frame / FPS) < 0.00001) return Promise.resolve(true);
+  return new Promise(resolve => {
+    let done = false;
+    const finish = success => {
+      if (done) return;
+      done = true;
+      video.removeEventListener('seeked', onSeek);
+      video.removeEventListener('emptied', onAbort);
+      video.removeEventListener('error', onAbort);
+      state.cancelNativeSeek = null;
+      resolve(success && version === state.playVersion && state.hasVideo);
+    };
+    const onSeek = () => finish(true);
+    const onAbort = () => finish(false);
+    state.cancelNativeSeek = onAbort;
+    video.addEventListener('seeked', onSeek);
+    video.addEventListener('emptied', onAbort);
+    video.addEventListener('error', onAbort);
+    video.currentTime = frame / FPS;
+    if (!video.seeking) onSeek();
+  });
+}
+
+function startSeekReverse() {
+  state.reverseMode = 'seeking';
+  reverseStatus('Basic rewind · smooth reverse unavailable');
+  hideCachedFrame();
+  let last = performance.now();
+  const tick = now => {
+    if (!state.reversing) return;
+    const elapsed = now - last;
+    if (!video.seeking && elapsed >= 1000 / (FPS * state.speed)) {
+      const frames = Math.floor(Math.min(elapsed, 250) * FPS * state.speed / 1000);
+      const target = Math.max(0, Math.round(video.currentTime * FPS) - frames);
+      last = now;
+      // Compatibility fallback only. The cached path below never seeks per frame.
+      video.currentTime = target / FPS;
+      setFrame(target);
+      if (target === 0) { pausePlayback(); return; }
+    }
+    state.reverseTimer = requestAnimationFrame(tick);
+  };
+  state.reverseTimer = requestAnimationFrame(tick);
+}
+
+async function startPlayback(direction = state.direction) {
   if (!state.hasVideo) { setMessage('Load a tactical video to play it.', true); return; }
-  pausePlayback();
+  const startFrame = Math.max(0, Math.min(state.frame, Math.ceil(video.duration * FPS) - 1));
+  pausePlayback(false);
+  const version = state.playVersion;
   state.direction = direction;
   if (direction > 0) {
+    state.starting = true;
+    updatePlaybackControls();
+    state.reverseMode = null;
+    if (state.cacheVisible) {
+      if (!await syncNativeFrame(startFrame, version)) return;
+      hideCachedFrame();
+    }
     video.playbackRate = state.speed;
-    const playVersion = state.playVersion;
+    state.starting = false;
     video.play().catch(error => {
-      if (playVersion !== state.playVersion || error.name === 'AbortError') return;
+      if (version !== state.playVersion || error.name === 'AbortError') return;
       pausePlayback();
       setMessage('Browser could not start playback.', true);
     });
-  } else if (video.currentTime > 0) {
-    // Negative playbackRate is not portable. Seek backwards only after each seek completes.
+  } else if (startFrame > 0) {
+    clearTimeout(state.warmTimer);
     state.reversing = true;
-    let last = performance.now();
-    const tick = now => {
-      if (!state.reversing) return;
-      const elapsed = now - last;
-      if (!video.seeking && elapsed >= 1000 / (FPS * state.speed)) {
-        const frames = Math.floor(Math.min(elapsed, 250) * FPS * state.speed / 1000);
-        const target = Math.max(0, Math.round(video.currentTime * FPS) - frames);
+    updatePlaybackControls();
+    const cache = state.reverseCache;
+    reverseStatus('Preparing reverse…');
+    try {
+      if (!cache) throw new Error('No decoded-frame cache available.');
+      await cache.warm(startFrame);
+      if (version !== state.playVersion || cache !== state.reverseCache) return;
+      const first = cache.get(startFrame);
+      if (!first) throw new Error('The requested frame could not be decoded.');
+      state.reverseMode = 'cache';
+      showCachedFrame(startFrame, first);
+      reverseStatus();
+      let last = performance.now(), carry = 0;
+      const tick = now => {
+        if (!state.reversing || version !== state.playVersion) return;
+        carry += Math.min(now - last, 250) * FPS * state.speed / 1000;
         last = now;
-        seekToFrame(target, true);
-        if (target === 0) { pausePlayback(); return; }
-      }
+        const steps = Math.floor(carry);
+        if (steps > 0) {
+          const frame = Math.max(cache.firstFrame, state.frame - steps);
+          const entry = cache.get(frame);
+          if (!entry) {
+            if (cache.chunks.has(Math.floor(frame / cache.chunkFrames))) {
+              pausePlayback();
+              setMessage('Reverse stopped at an unavailable video frame.', true);
+              return;
+            }
+            // Hold the displayed frame while refilling rather than jumping the match clock.
+            carry = 0;
+            reverseStatus('Preparing reverse…');
+          } else {
+            carry -= steps;
+            showCachedFrame(frame, entry);
+            reverseStatus();
+            if (frame === cache.firstFrame) { pausePlayback(); return; }
+          }
+          cache.warm(frame).catch(error => {
+            if (version !== state.playVersion) return;
+            const displayed = state.frame;
+            pausePlayback(false);
+            video.currentTime = displayed / FPS;
+            hideCachedFrame();
+            setMessage(`Reverse decoding stopped: ${error.message}`, true);
+          });
+        }
+        state.reverseTimer = requestAnimationFrame(tick);
+      };
       state.reverseTimer = requestAnimationFrame(tick);
-    };
-    state.reverseTimer = requestAnimationFrame(tick);
+    } catch (error) {
+      if (version !== state.playVersion) return;
+      // Keep basic controls available on browsers/codecs without WebCodecs decoding.
+      await syncNativeFrame(startFrame, version);
+      if (version !== state.playVersion) return;
+      startSeekReverse();
+      $('reverse-status').title = error.message;
+    }
   }
   updatePlaybackControls();
 }
 
 function setPlaybackRate(rate) {
   if (!PLAYBACK_RATES.includes(rate)) return;
-  const playing = state.reversing || !video.paused;
+  const playing = state.starting || state.reversing || !video.paused;
   const direction = Math.sign(rate);
   const changedDirection = direction !== state.direction;
   state.direction = direction;
@@ -458,7 +615,7 @@ function stepPlaybackRate(delta) {
 }
 
 $('play').addEventListener('click', () => {
-  if (state.reversing || !video.paused) pausePlayback();
+  if (state.starting || state.reversing || !video.paused) pausePlayback();
   else startPlayback();
 });
 for (const [id, delta] of [['back-frame', -1], ['forward-frame', 1]]) {
@@ -476,7 +633,9 @@ function applyZoom() {
   const maxY = Math.max(0, (video.videoHeight * fit * state.zoom - stage.clientHeight) / 2) || 0;
   state.panX = Math.max(-maxX, Math.min(maxX, state.panX));
   state.panY = Math.max(-maxY, Math.min(maxY, state.panY));
-  video.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+  const transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+  video.style.transform = transform;
+  $('reverse-frame').style.transform = transform;
   $('zoom').value = String(state.zoom);
   $('reset-zoom').textContent = `${state.zoom.toFixed(2)}×`;
   $('zoom').setAttribute('aria-valuetext', `${state.zoom.toFixed(2)} times`);
@@ -539,7 +698,8 @@ $('stage').addEventListener('dblclick', event => {
 });
 
 $('reset-video').addEventListener('click', () => {
-  pausePlayback();
+  pausePlayback(false);
+  clearReverseCache();
   video.removeAttribute('src');
   video.load();
   if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);

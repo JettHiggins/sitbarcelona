@@ -52,9 +52,30 @@ Changing speed preserves play/pause state. For example, « from +1× selects +0.
 click selects +0.25×, then −0.25×. Play/pause is separate from the speed steps.
 
 Reverse stops at the start of the video. Seeking or stepping a frame pauses continuous playback.
-Reverse uses decoded frame seeks rather than negative browser playback rates; it has no reverse
-audio, and smoothness depends on the browser, video encoding and speed. Use 0.25× or 0.5× to
-inspect touches in either direction.
+Reverse now displays a rolling cache of decoded frames; it does not seek the video element
+for each frame. Forward playback stays on the normal video element. Use 0.25× or 0.5× to inspect
+touches in either direction. Reverse audio is not played.
+
+## Reverse-frame cache
+
+[Mediabunny](vendor/mediabunny/README.md) reads short sections directly from the chosen local
+file and decodes them into independent frame bitmaps. The current section and two preceding
+sections are retained, with older bitmaps explicitly closed. The cache adapts section size to
+resolution and caps stored RGBA frame data at **256 MiB**; decoder and display buffers add some
+memory beyond that. Full 1920×1080 detail is preserved. Larger sources are scaled to a maximum
+1920-pixel edge for cached reverse; normal forward playback keeps the original resolution.
+
+Paused positions are warmed in the background. Reverse prefetches earlier sections while
+showing cached frames. A short **Preparing reverse…** notice appears on a cold start or if
+prefetch cannot keep up, especially at high reverse speeds. While refilling, the image and
+prediction clock stay on the same frame. Pausing synchronizes the native video once; switching
+forward resumes from the cached position. Seeking, replacing or removing a video cancels stale
+playback work, and replacing/removing it closes the cache's bitmaps and decoder input.
+
+The dependency is version-pinned and served locally, with its license and source link in
+`vendor/mediabunny/`. There is no CDN, video upload, full-match decode, or reversed video file.
+If the browser or codec cannot supply decoded frames, the viewer labels its slower compatibility
+mode **Basic rewind · smooth reverse unavailable**. Forward playback still works.
 
 ## Zoom and pan
 
@@ -104,9 +125,19 @@ Playback and zoom regression checks use a generated six-second synthetic video (
 
 ```bash
 ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25 -t 6 \
-  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -threads 2 -y \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -threads 2 \
+  -colorspace bt709 -color_trc bt709 -color_primaries bt709 -color_range tv -y \
   possession-viewer/tests/fixtures/inspection.webm
 playwright-cli run-code --filename=possession-viewer/tests/inspection.js
+playwright-cli run-code --filename=possession-viewer/tests/reverse-cache.js
 ```
 
 The generated clip is ignored by Git and contains no match footage.
+
+The cache checks use a deliberately small 8 MiB budget to force section changes. They compare
+cached/native frame pixels and timestamps and check bounded memory, bitmap disposal, zero
+native seeks during cached reverse, forward handoff, cancelled preparation, file replacement,
+and unsupported-decoder fallback. A manual Chromium check on the 1920×1080 H.264 tactical file
+at frame 12000 displayed 106 distinct frames in 4.2 seconds at −1×, with zero per-frame native
+video seeks and a maximum sampled inter-frame gap of 64 ms. This is a local observation, not a
+performance guarantee on other machines or codecs.
