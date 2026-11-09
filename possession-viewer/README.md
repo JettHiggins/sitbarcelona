@@ -21,6 +21,11 @@ does not provide directory listings, **Choose file…** still works.
 
 The CSV needs `frame,label` columns with frames 0–199318 and labels H (home),
 A (away), D (dead ball), or X (unknown). The viewer uses 25 fps.
+The viewer displays **BAR** for H and **ATH** for A in predictions, ground truth and graph labels.
+Team names and abbreviations live in `match.js`; CSV codes stay H/A/D/X. Changing these names
+alone does not add a new match timeline: other games still need their frame/FPS settings and
+reference data configured. Reference labels are checked against the configured match ID.
+
 A local copy of the challenge baseline is at `data/baseline_smooth50.csv`, ignored by Git.
 
 A warning symbol appears only when frame counts differ or the CSV has missing or duplicate frames. Hover over it for details. Video frames are estimated from duration × 25 fps.

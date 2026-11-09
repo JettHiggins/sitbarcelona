@@ -16,7 +16,7 @@ async page => {
   check(reference.first === 'A' && reference.last === 'H', 'Reference boundary labels');
   check(reference.transitionBefore === 'A' && reference.transitionAfter === 'H', 'Reference transition must be frame-exact');
   await page.locator('#jump-reference').click();
-  check(await page.locator('#expected-symbol').textContent() === 'A', 'Jump shows the first reference label');
+  check(await page.locator('#expected-symbol').textContent() === 'ATH', 'Jump shows the first reference label');
   check(await page.locator('#comparison-status').isHidden(), 'No comparison without predictions');
 
   // Sparse input deliberately exercises missing predictions and explicit abstention.
@@ -33,7 +33,7 @@ async page => {
   }));
   check((await status()).text === 'Matches ground truth', 'Correct prediction is a match');
   await jump(11351);
-  check((await status()).mismatch && (await status()).expected === 'H', 'Wrong team highlights video and expected label');
+  check((await status()).mismatch && (await status()).expected === 'BAR', 'Wrong team highlights video and expected label');
   await jump(12851);
   check(!(await status()).mismatch && (await status()).expected === 'D', 'Dead ball is a real reference label');
   await jump(18684);

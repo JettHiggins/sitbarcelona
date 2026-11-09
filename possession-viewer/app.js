@@ -3,10 +3,10 @@ const FRAME_COUNT = 199319;
 const LAST_FRAME = FRAME_COUNT - 1;
 const PLAYBACK_RATES = [-8, -4, -2, -1, -0.5, -0.25, 0.25, 0.5, 1, 2, 4, 8];
 const LABELS = {
-  H: { name: 'Home possession', short: 'HOME · BARCELONA', color: '#568eff', level: 2 },
-  A: { name: 'Away possession', short: 'AWAY · ATHLETIC', color: '#f34d4d', level: 0 },
-  D: { name: 'Dead ball', short: 'DEAD BALL', color: '#e4bc46', level: 1 },
-  X: { name: 'Unknown', short: 'UNKNOWN', color: '#aaa', level: 3 },
+  H: { name: `${MATCH_CONFIG.home.name} possession`, display: MATCH_CONFIG.home.abbreviation, color: '#568eff', level: 2 },
+  A: { name: `${MATCH_CONFIG.away.name} possession`, display: MATCH_CONFIG.away.abbreviation, color: '#f34d4d', level: 0 },
+  D: { name: 'Dead ball', display: 'D', color: '#e4bc46', level: 1 },
+  X: { name: 'Unknown', display: 'X', color: '#aaa', level: 3 },
 };
 
 const $ = id => document.getElementById(id);
@@ -57,7 +57,7 @@ function setFrame(frame) {
   if (document.activeElement !== $('frame-input')) $('frame-input').value = String(frame);
 
   const code = state.predictions?.labels[frame] || 'X';
-  $('decision-symbol').textContent = state.predictions ? code : '—';
+  $('decision-symbol').textContent = state.predictions ? LABELS[code].display : '—';
   $('decision-symbol').className = `decision-symbol ${code.toLowerCase()}`;
   $('decision-symbol').setAttribute('aria-label', state.predictions ? LABELS[code].name : 'No predictions loaded');
   updateComparison();
@@ -200,7 +200,8 @@ function updateComparison() {
   const comparable = Boolean(expected && state.predictions);
   const mismatch = comparable && prediction !== expected;
   $('reference-decision').hidden = !expected;
-  $('expected-symbol').textContent = expected || '—';
+  $('expected-symbol').textContent = expected ? LABELS[expected].display : '—';
+  $('expected-symbol').classList.toggle('team', expected === 'H' || expected === 'A');
   $('expected-symbol').style.color = expected ? LABELS[expected].color : '';
   $('expected-symbol').setAttribute('aria-label', expected ? `Ground truth: ${LABELS[expected].name}` : 'No ground truth for this frame');
   $('stage').classList.toggle('prediction-mismatch', mismatch);
@@ -217,7 +218,7 @@ async function loadReference() {
     const response = await fetch('reference/public-ground-truth.json');
     if (!response.ok) throw new Error('Could not load public ground truth');
     const data = await response.json();
-    if (data.fps !== FPS || data.frame_count !== FRAME_COUNT || !Array.isArray(data.segments) || !data.segments.length) {
+    if (data.game !== MATCH_CONFIG.id || data.fps !== FPS || data.frame_count !== FRAME_COUNT || !Array.isArray(data.segments) || !data.segments.length) {
       throw new Error('Ground-truth timeline does not match this video');
     }
     const labels = new Array(FRAME_COUNT);
@@ -277,6 +278,7 @@ function drawTimeline() {
 
 function drawTrace() {
   const { ctx, width, height } = prepareCanvas($('trace'));
+  const left = 30;
   const pad = 13, innerHeight = height - pad * 2;
   ctx.strokeStyle = '#ffffff12'; ctx.lineWidth = 1;
   for (let row = 0; row < 4; row++) {
@@ -284,10 +286,10 @@ function drawTrace() {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
   }
   ctx.fillStyle = '#aaa'; ctx.font = '9px monospace';
-  ['A','D','H','X'].forEach((code, index) => { ctx.fillStyle = LABELS[code].color; ctx.fillText(code, 4, pad + index * innerHeight / 3 + 3); });
-  const frameAtX = x => state.frame + Math.round((x - 16) / Math.max(1, width - 17) * 500) - 250;
+  ['A','D','H','X'].forEach((code, index) => { ctx.fillStyle = LABELS[code].color; ctx.fillText(LABELS[code].display, 4, pad + index * innerHeight / 3 + 3); });
+  const frameAtX = x => state.frame + Math.round((x - left) / Math.max(1, width - left - 1) * 500) - 250;
   if (state.predictions && state.reference) {
-    for (let x = 16; x < width; x++) {
+    for (let x = left; x < width; x++) {
       const frame = frameAtX(x), truth = referenceAt(frame);
       if (truth && state.predictions.labels[frame] !== truth) {
         ctx.fillStyle = '#ffb36b22'; ctx.fillRect(x, 0, 1, height);
@@ -297,7 +299,7 @@ function drawTrace() {
   const labels = state.predictions?.labels;
   if (labels) {
     let previous = null;
-    for (let x = 16; x < width; x++) {
+    for (let x = left; x < width; x++) {
       const frame = Math.max(0, Math.min(LAST_FRAME, frameAtX(x)));
       const code = labels[frame] || 'X';
       const y = pad + LABELS[code].level * innerHeight / 3;
@@ -314,7 +316,7 @@ function drawTrace() {
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
   ctx.beginPath();
   let previousTruth = null;
-  for (let x = 16; x < width; x++) {
+  for (let x = left; x < width; x++) {
     const truth = referenceAt(frameAtX(x));
     if (!truth) { previousTruth = null; continue; }
     const y = pad + LABELS[truth].level * innerHeight / 3;
@@ -324,7 +326,7 @@ function drawTrace() {
   }
   ctx.stroke(); ctx.setLineDash([]);
   ctx.strokeStyle = '#ffffffcc'; ctx.lineWidth = 1;
-  const nowX = 16 + (width - 17) / 2;
+  const nowX = left + (width - left - 1) / 2;
   ctx.beginPath(); ctx.moveTo(nowX, 0); ctx.lineTo(nowX, height); ctx.stroke();
 }
 
