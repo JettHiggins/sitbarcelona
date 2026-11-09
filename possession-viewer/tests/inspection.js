@@ -11,7 +11,16 @@ async page => {
     await page.waitForFunction(() => !video.seeking);
   };
   await seek(100);
+  for (const rate of [0.5, 0.25, -0.25, -0.5, -1]) {
+    await page.locator('#slower').click();
+    check(await page.locator('#playback-rate').inputValue() === String(rate), 'Decrease moves exactly one signed speed step');
+    check(await page.evaluate(() => video.paused && !state.reversing), 'Adjusting speed while paused does not start playback');
+  }
+  await page.locator('#faster').click();
+  check(await page.locator('#playback-rate').inputValue() === '-0.5', 'Increase slows negative playback toward zero');
   await page.locator('#slower').click();
+  check(await page.evaluate(() => state.zoom) === 1, 'Speed changes do not affect zoom');
+  await page.locator('#play').click();
   await page.waitForFunction(() => state.reversing && video.currentTime < 3.6);
   check(await page.locator('#play').getAttribute('aria-label') === 'Pause', 'Reverse playback shows pause');
   await page.locator('#play').click();
@@ -25,8 +34,8 @@ async page => {
   await page.locator('#back-frame').click();
   check(await page.evaluate(() => !state.reversing && video.paused), 'Frame stepping stops continuous reverse');
   await seek(90);
-  await page.locator('#playback-rate').selectOption('0.25');
-  await page.locator('#slower').click();
+  await page.locator('#playback-rate').selectOption('-0.25');
+  await page.locator('#play').click();
   const slowStart = await page.evaluate(() => video.currentTime);
   await page.waitForTimeout(850);
   const slowEnd = await page.evaluate(() => video.currentTime);
@@ -35,8 +44,9 @@ async page => {
   await page.waitForFunction(() => !video.paused && state.direction === 1 && !state.reversing);
   check(await page.evaluate(() => video.playbackRate) === 0.25, 'Forward playback retains chosen slow speed');
   await seek(25);
-  await page.locator('#playback-rate').selectOption('8');
-  await page.locator('#slower').click();
+  await page.locator('#playback-rate').selectOption('-8');
+  check(await page.locator('#slower').isDisabled(), 'Minimum speed is bounded');
+  await page.locator('#play').click();
   await page.waitForFunction(() => !state.reversing && video.currentTime === 0);
   check(await page.locator('#play').getAttribute('aria-label') === 'Play in reverse', 'Reverse stops cleanly at frame zero');
 
@@ -81,10 +91,10 @@ async page => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.locator('#zoom').fill('3');
   await seek(75);
-  await page.locator('#slower').click();
+  await page.locator('#play').click();
   await seek(50);
   check(await page.evaluate(() => !state.reversing && video.paused && state.zoom === 3), 'Seeking stops reverse while retaining zoom');
-  await page.locator('#slower').click();
+  await page.locator('#play').click();
   await page.locator('#reset-video').click();
   check(await page.evaluate(() => !state.reversing && !state.hasVideo && state.zoom === 1 && state.direction === 1 && state.speed === 1), 'Removing video clears reverse playback and zoom');
   check(await page.locator('#zoom-controls').isHidden(), 'Zoom controls hide without video');

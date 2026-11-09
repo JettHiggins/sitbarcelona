@@ -1,6 +1,7 @@
 const FPS = 25;
 const FRAME_COUNT = 199319;
 const LAST_FRAME = FRAME_COUNT - 1;
+const PLAYBACK_RATES = [-8, -4, -2, -1, -0.5, -0.25, 0.25, 0.5, 1, 2, 4, 8];
 const LABELS = {
   H: { name: 'Home possession', short: 'HOME · BARCELONA', color: '#568eff', level: 2 },
   A: { name: 'Away possession', short: 'AWAY · ATHLETIC', color: '#f34d4d', level: 0 },
@@ -388,12 +389,10 @@ function updatePlaybackControls() {
   const playing = state.reversing || !video.paused;
   $('play').textContent = playing ? 'Ⅱ' : '▶';
   $('play').setAttribute('aria-label', playing ? 'Pause' : state.direction < 0 ? 'Play in reverse' : 'Play');
-  $('slower').setAttribute('aria-pressed', String(playing && state.direction < 0));
-  $('faster').setAttribute('aria-pressed', String(playing && state.direction > 0));
-  for (const option of $('playback-rate').options) {
-    option.textContent = `${state.direction < 0 ? '−' : ''}${option.value}×`;
-  }
-  $('playback-rate').value = String(state.speed);
+  const rate = state.direction * state.speed;
+  $('slower').disabled = rate === PLAYBACK_RATES[0];
+  $('faster').disabled = rate === PLAYBACK_RATES.at(-1);
+  $('playback-rate').value = String(rate);
 }
 
 function pausePlayback() {
@@ -439,9 +438,21 @@ function startPlayback(direction = state.direction) {
 }
 
 function setPlaybackRate(rate) {
-  state.speed = Math.max(0.25, Math.min(8, rate));
+  if (!PLAYBACK_RATES.includes(rate)) return;
+  const playing = state.reversing || !video.paused;
+  const direction = Math.sign(rate);
+  const changedDirection = direction !== state.direction;
+  state.direction = direction;
+  state.speed = Math.abs(rate);
   video.playbackRate = state.speed;
-  updatePlaybackControls();
+  if (playing && changedDirection) startPlayback(direction);
+  else updatePlaybackControls();
+}
+
+function stepPlaybackRate(delta) {
+  const index = PLAYBACK_RATES.indexOf(state.direction * state.speed);
+  const next = Math.max(0, Math.min(PLAYBACK_RATES.length - 1, index + delta));
+  setPlaybackRate(PLAYBACK_RATES[next]);
 }
 
 $('play').addEventListener('click', () => {
@@ -451,14 +462,8 @@ $('play').addEventListener('click', () => {
 for (const [id, delta] of [['back-frame', -1], ['forward-frame', 1]]) {
   $(id).addEventListener('click', () => seekToFrame(state.frame + delta));
 }
-$('slower').addEventListener('click', () => {
-  if (state.reversing) setPlaybackRate(Math.min(8, state.speed * 2));
-  startPlayback(-1);
-});
-$('faster').addEventListener('click', () => {
-  if (!video.paused && state.direction > 0) setPlaybackRate(Math.min(8, state.speed * 2));
-  startPlayback(1);
-});
+$('slower').addEventListener('click', () => stepPlaybackRate(-1));
+$('faster').addEventListener('click', () => stepPlaybackRate(1));
 $('playback-rate').addEventListener('change', event => setPlaybackRate(Number(event.target.value)));
 document.addEventListener('visibilitychange', () => { if (document.hidden && state.reversing) pausePlayback(); });
 

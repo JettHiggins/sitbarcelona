@@ -54,15 +54,18 @@
       <div class="transport">
         <span class="timecode" id="timecode">00:00:00</span>
         <div class="playback-buttons">
-          <button id="slower" type="button" aria-label="Rewind" title="Play in reverse; click again to rewind faster" aria-pressed="false">«</button>
+          <button id="slower" type="button" aria-label="Decrease playback speed" title="Decrease playback speed by one step">«</button>
           <button id="back-frame" type="button" aria-label="Back one frame" title="Back one frame (←)">‹</button>
           <button id="play" type="button" aria-label="Play" title="Play / pause (Space)">▶</button>
           <button id="forward-frame" type="button" aria-label="Forward one frame" title="Forward one frame (→)">›</button>
-          <button id="faster" type="button" aria-label="Play forward" title="Play forward; click again to go faster" aria-pressed="false">»</button>
+          <button id="faster" type="button" aria-label="Increase playback speed" title="Increase playback speed by one step">»</button>
         </div>
         <div class="utilities">
           <button id="frame-check" type="button" aria-label="Frame count warning" hidden>⚠</button>
           <select id="playback-rate" aria-label="Playback speed" title="Playback speed">
+            <option value="-8">−8×</option><option value="-4">−4×</option>
+            <option value="-2">−2×</option><option value="-1">−1×</option>
+            <option value="-0.5">−0.5×</option><option value="-0.25">−0.25×</option>
             <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
             <option value="1" selected>1×</option><option value="2">2×</option>
             <option value="4">4×</option><option value="8">8×</option>

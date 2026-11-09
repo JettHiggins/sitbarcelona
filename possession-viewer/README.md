@@ -34,14 +34,17 @@ This checks counts, frame IDs, order, and labels. Matching counts do not establi
 
 ## Controls
 
-- «: play in reverse; click again while reversing to double speed, up to 8×
-- »: play forward; click again while playing to double speed, up to 8×
-- Speed dropdown: choose 0.25×, 0.5×, 1×, 2×, 4×, or 8× in the current direction
+- « / »: decrease / increase playback speed by one step
+- Speed dropdown: choose a signed speed directly; negative values play in reverse
 - Space: pause or resume in the current direction
 - Left/right: step one frame
 - Shift + left/right: step one second
 - Scrubber: seek
 - Frame number: jump to a frame
+
+The speed steps are −8, −4, −2, −1, −0.5, −0.25, +0.25, +0.5, +1, +2, +4, +8×.
+Changing speed preserves play/pause state. For example, « from +1× selects +0.5×; another
+click selects +0.25×, then −0.25×. Play/pause is separate from the speed steps.
 
 Reverse stops at the start of the video. Seeking or stepping a frame pauses continuous playback.
 Reverse uses decoded frame seeks rather than negative browser playback rates; it has no reverse
