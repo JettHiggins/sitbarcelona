@@ -13,3 +13,8 @@ data/
 .playwright-cli/
 __pycache__/
 .DS_Store
+
+# Isolated pipeline environments, caches, and generated reports
+pipeline/.venv/
+pipeline/cache/
+pipeline/reports/

@@ -36,3 +36,9 @@ This checks counts, frame IDs, order, and labels. Matching counts do not establi
 
 Use the tactical video: the broadcast feed has a different timeline.
 Do not commit licensed match video or datasets.
+
+## Compare pipelines
+
+See [pipeline setup and commands](../pipeline/README.md) to generate `lenny-model.csv`,
+`mall-model.csv`, or a model-free `mall-events.csv` locally. Load one using **Predictions CSV**,
+then choose another CSV to compare at the same video frame. Outputs use the same frame timeline.
