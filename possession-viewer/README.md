@@ -46,6 +46,14 @@ This checks counts, frame IDs, order, and labels. Matching counts do not establi
 - Shift + left/right: step one second
 - Scrubber: seek
 - Frame number: jump to a frame
+- Scroll over the bottom timeline: zoom around the cursor, down to a one-second/25-frame view
+- Shift+scroll (or horizontal trackpad scroll) over the timeline: pan the visible window
+
+Timeline zoom adds no buttons. Scroll back out for the full match. The existing **Ground truth**
+link also fits the public five-minute window. Endpoint labels show exact frame bounds, hover
+shows the frame and labels under the cursor, and clicking/dragging seeks within the visible
+window. Playback or a frame jump keeps the current frame visible at the selected zoom.
+Video zoom and timeline zoom are independent.
 
 The speed steps are −8, −4, −2, −1, −0.5, −0.25, +0.25, +0.5, +1, +2, +4, +8×.
 Changing speed preserves play/pause state. For example, « from +1× selects +0.5×; another
@@ -117,6 +125,7 @@ Browser regression checks (with `playwright-cli` installed and the viewer served
 playwright-cli open http://localhost:8080
 playwright-cli run-code --filename=possession-viewer/tests/ground-truth.js
 playwright-cli run-code --filename=possession-viewer/tests/csv-picker.js
+playwright-cli run-code --filename=possession-viewer/tests/timeline-zoom.js
 ```
 
 Run those commands from the repository root. The two tiny CSV fixtures are synthetic.

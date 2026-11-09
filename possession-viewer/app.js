@@ -1,6 +1,7 @@
 const FPS = 25;
 const FRAME_COUNT = 199319;
 const LAST_FRAME = FRAME_COUNT - 1;
+const MIN_TIMELINE_FRAMES = 25;
 const PLAYBACK_RATES = [-8, -4, -2, -1, -0.5, -0.25, 0.25, 0.5, 1, 2, 4, 8];
 const LABELS = {
   H: { name: `${MATCH_CONFIG.home.name} possession`, display: MATCH_CONFIG.home.abbreviation, color: '#568eff', level: 2 },
@@ -12,6 +13,7 @@ const LABELS = {
 const $ = id => document.getElementById(id);
 const video = $('video');
 const state = {
+  timelineStart: 0, timelineEnd: FRAME_COUNT,
   frame: 0, predictions: null, videoUrl: null, hasVideo: false,
   reference: null, referenceError: null, predictionSource: '', csvLoadVersion: 0,
   direction: 1, speed: 1, reversing: false, reverseTimer: null, playVersion: 0,
@@ -51,11 +53,10 @@ function updateFrameCheck() {
 
 function setFrame(frame) {
   frame = Math.max(0, Math.min(LAST_FRAME, Math.floor(frame) || 0));
+  if (frame !== state.frame) ensureTimelineVisible(frame);
   state.frame = frame;
   $('timecode').textContent = formatTime(frame / FPS);
-  $('seek').value = String(frame);
-  $('timeline-playhead').style.left = `${frame / LAST_FRAME * 100}%`;
-  $('seek-progress').style.width = `${frame / LAST_FRAME * 100}%`;
+  updateTimelinePosition();
   if (document.activeElement !== $('frame-input')) $('frame-input').value = String(frame);
 
   const code = state.predictions?.labels[frame] || 'X';
@@ -71,6 +72,7 @@ function seekToFrame(frame, keepPlaying = false) {
   frame = Math.max(0, Math.min(LAST_FRAME, Math.floor(Number(frame)) || 0));
   if (state.hasVideo) video.currentTime = frame / FPS;
   hideCachedFrame();
+  ensureTimelineVisible(frame);
   setFrame(frame);
   scheduleReverseWarm();
 }
@@ -251,33 +253,91 @@ async function loadReference() {
   }
 }
 
+function updateTimelinePosition() {
+  const start = state.timelineStart, end = state.timelineEnd;
+  const span = end - start;
+  const fraction = (state.frame - start) / Math.max(1, span - 1);
+  $('seek').min = String(start);
+  $('seek').max = String(end - 1);
+  $('seek').value = String(state.frame);
+  $('timeline-playhead').hidden = fraction < 0 || fraction > 1;
+  $('timeline-playhead').style.left = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+  $('seek-progress').style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+  $('timeline-start-label').textContent = `${formatTime(start / FPS)} · f${start}`;
+  $('timeline-end-label').textContent = `${formatTime((end - 1) / FPS)} · f${end - 1}`;
+  $('timeline').setAttribute('aria-label', `Prediction and ground-truth timeline, frames ${start} through ${end - 1}`);
+}
+
+function setTimelineWindow(start, span) {
+  span = Math.max(MIN_TIMELINE_FRAMES, Math.min(FRAME_COUNT, Math.round(span)));
+  state.timelineStart = Math.max(0, Math.min(FRAME_COUNT - span, Math.round(start)));
+  state.timelineEnd = state.timelineStart + span;
+  updateTimelinePosition();
+  drawTimeline();
+}
+
+function ensureTimelineVisible(frame) {
+  if (frame < state.timelineStart || frame >= state.timelineEnd) {
+    const span = state.timelineEnd - state.timelineStart;
+    setTimelineWindow(frame - span / 2, span);
+  }
+}
+
+function zoomTimeline(span, anchor = null) {
+  const oldSpan = state.timelineEnd - state.timelineStart;
+  if (anchor === null) anchor = state.frame >= state.timelineStart && state.frame < state.timelineEnd
+    ? state.frame : state.timelineStart + oldSpan / 2;
+  const fraction = (anchor - state.timelineStart) / oldSpan;
+  const nextSpan = Math.max(MIN_TIMELINE_FRAMES, Math.min(FRAME_COUNT, Math.round(span)));
+  setTimelineWindow(anchor - fraction * nextSpan, nextSpan);
+}
+
+function fitReferenceTimeline(goToStart = false) {
+  if (!state.reference) return;
+  const start = state.reference.first;
+  const end = state.reference.segments.at(-1)[1];
+  setTimelineWindow(start, end - start);
+  if (goToStart || state.frame < start || state.frame >= end) seekToFrame(start);
+}
+
 function drawTimeline() {
   const { ctx, width, height } = prepareCanvas($('timeline'));
-  ctx.fillStyle = '#333'; ctx.fillRect(0, 0, width, 4);
-  // Predictions above; the public reference occupies only its actual labeled interval below.
+  const viewStart = state.timelineStart, viewEnd = state.timelineEnd;
+  const span = viewEnd - viewStart;
+  ctx.fillStyle = '#333'; ctx.fillRect(0, 0, width, 6);
   if (state.predictions) {
     for (let x = 0; x < width; x++) {
-      const frame = Math.min(LAST_FRAME, Math.floor((x + .5) / width * FRAME_COUNT));
+      const frame = Math.min(viewEnd - 1, Math.floor(viewStart + (x + .5) / width * span));
       ctx.fillStyle = LABELS[state.predictions.labels[frame] || 'X'].color;
-      ctx.fillRect(x, 0, 1, 4);
+      ctx.fillRect(x, 0, 1, 6);
     }
   }
-  if (!state.reference) return;
-  for (const [start, end, code] of state.reference.segments) {
-    ctx.fillStyle = LABELS[code].color;
-    ctx.fillRect(start / FRAME_COUNT * width, 8, Math.max(1, (end - start) / FRAME_COUNT * width), height - 8);
-  }
-  // Aggregate each pixel's frames so even a short mismatch remains visible at full-match scale.
-  if (state.predictions) {
-    for (let x = 0; x < width; x++) {
-      const start = Math.floor(x / width * FRAME_COUNT);
-      const end = Math.min(FRAME_COUNT, Math.ceil((x + 1) / width * FRAME_COUNT));
-      for (let frame = start; frame < end; frame++) {
-        const truth = referenceAt(frame);
-        if (truth && truth !== state.predictions.labels[frame]) {
-          ctx.fillStyle = '#ffb36b'; ctx.fillRect(x, 5, 1, 2); break;
+  if (state.reference) {
+    for (const [start, end, code] of state.reference.segments) {
+      const a = Math.max(viewStart, start), b = Math.min(viewEnd, end);
+      if (b <= a) continue;
+      ctx.fillStyle = LABELS[code].color;
+      ctx.fillRect((a - viewStart) / span * width, 12, Math.max(1, (b - a) / span * width), height - 12);
+    }
+    if (state.predictions) {
+      // Aggregate errors within each pixel; even a one-frame error remains visible.
+      for (let x = 0; x < width; x++) {
+        const start = Math.floor(viewStart + x / width * span);
+        const end = Math.min(viewEnd, Math.ceil(viewStart + (x + 1) / width * span));
+        for (let frame = start; frame < end; frame++) {
+          const truth = referenceAt(frame);
+          if (truth && truth !== state.predictions.labels[frame]) {
+            ctx.fillStyle = '#ffb36b'; ctx.fillRect(x, 8, 1, 2); break;
+          }
         }
       }
+    }
+  }
+  if (width / span >= 8) {
+    ctx.strokeStyle = '#0006'; ctx.lineWidth = 1;
+    for (let frame = viewStart; frame < viewEnd; frame++) {
+      const x = (frame - viewStart) / span * width;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
     }
   }
 }
@@ -733,6 +793,29 @@ $('reset-predictions').addEventListener('click', () => {
   setMessage('');
 });
 setPlaybackRate(1);
+$('timeline-wrap').addEventListener('wheel', event => {
+  event.preventDefault();
+  const bounds = $('timeline-wrap').getBoundingClientRect();
+  const span = state.timelineEnd - state.timelineStart;
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? bounds.width : 1;
+  if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+    const delta = (Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY) * unit;
+    setTimelineWindow(state.timelineStart + delta / bounds.width * span, span);
+  } else {
+    const fraction = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+    zoomTimeline(span * Math.exp(event.deltaY * unit * 0.002), state.timelineStart + fraction * span);
+  }
+}, { passive: false });
+$('timeline-wrap').addEventListener('pointermove', event => {
+  const bounds = $('timeline-wrap').getBoundingClientRect();
+  const frame = Math.min(state.timelineEnd - 1, Math.max(state.timelineStart,
+    Math.floor(state.timelineStart + (event.clientX - bounds.left) / bounds.width * (state.timelineEnd - state.timelineStart))));
+  const predicted = state.predictions?.labels[frame];
+  const expected = referenceAt(frame);
+  $('timeline-wrap').title = `Frame ${frame} · ${formatTime(frame / FPS)}` +
+    (predicted ? ` · Predicted ${LABELS[predicted].display}` : '') +
+    (expected ? ` · Expected ${LABELS[expected].display}` : '');
+});
 $('seek').addEventListener('input', event => seekToFrame(event.target.value));
 $('frame-input').addEventListener('change', event => seekToFrame(event.target.value));
 document.addEventListener('keydown', event => {
@@ -747,7 +830,7 @@ window.addEventListener('resize', () => { applyZoom(); drawTimeline(); drawTrace
 setFrame(0); drawTimeline();
 
 $('jump-reference').addEventListener('click', () => {
-  if (state.reference) seekToFrame(state.reference.first);
+  fitReferenceTimeline(true);
 });
 loadReference();
 
