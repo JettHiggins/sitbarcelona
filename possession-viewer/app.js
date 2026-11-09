@@ -10,7 +10,12 @@ const LABELS = {
 
 const $ = id => document.getElementById(id);
 const video = $('video');
-const state = { frame: 0, predictions: null, videoUrl: null, hasVideo: false, reference: null, referenceError: null };
+const state = {
+  frame: 0, predictions: null, videoUrl: null, hasVideo: false,
+  reference: null, referenceError: null, predictionSource: '', csvLoadVersion: 0,
+  direction: 1, speed: 1, reversing: false, reverseTimer: null, playVersion: 0,
+  zoom: 1, panX: 0, panY: 0,
+};
 
 function setMessage(message, error = false) {
   $('source-message').textContent = message;
@@ -58,7 +63,8 @@ function setFrame(frame) {
   drawTrace();
 }
 
-function seekToFrame(frame) {
+function seekToFrame(frame, keepPlaying = false) {
+  if (!keepPlaying) pausePlayback();
   frame = Math.max(0, Math.min(LAST_FRAME, Math.floor(Number(frame)) || 0));
   if (state.hasVideo) video.currentTime = frame / FPS;
   setFrame(frame);
@@ -89,17 +95,61 @@ function parseCsv(text, filename) {
   return { labels, rows, duplicates, filename };
 }
 
-async function loadCsv(file) {
+function updateCsvSelection() {
+  const select = $('prediction-select');
+  select.querySelector('option[value="local"]')?.remove();
+  if (state.predictionSource === 'local' && state.predictions) {
+    select.add(new Option(state.predictions.filename, 'local'));
+  }
+  select.value = state.predictionSource;
+  select.title = state.predictions?.filename || 'CSV files in data/';
+}
+
+async function loadCsvOptions() {
+  const select = $('prediction-select');
+  try {
+    // The existing python http.server exposes data/ as an HTML directory listing.
+    const directory = new URL('data/', location.href);
+    const response = await fetch(directory, { cache: 'no-store' });
+    if (!response.ok) throw new Error('CSV list unavailable');
+    const listing = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const names = new Set();
+    for (const link of listing.querySelectorAll('a[href]')) {
+      try {
+        const url = new URL(link.getAttribute('href'), directory);
+        if (url.origin !== directory.origin || !url.pathname.startsWith(directory.pathname)) continue;
+        const name = decodeURIComponent(url.pathname.slice(directory.pathname.length));
+        if (name && !name.includes('/') && !name.includes('\\') && /\.csv$/i.test(name)) names.add(name);
+      } catch { /* Ignore malformed directory entries. */ }
+    }
+    const selected = state.predictionSource;
+    select.replaceChildren(new Option(names.size ? 'Predictions CSV' : 'No CSVs in data/', ''));
+    select.options[0].disabled = true;
+    for (const name of [...names].sort((a, b) => a.localeCompare(b))) select.add(new Option(name, `data:${name}`));
+    // Keep the selected file visible even if it was removed from the directory meanwhile.
+    if (selected.startsWith('data:') && ![...select.options].some(option => option.value === selected)) {
+      select.add(new Option(state.predictions.filename, selected));
+    }
+    updateCsvSelection();
+  } catch {
+    // Manual uploads remain available on hosts without directory listings.
+    if (select.options.length === 1) select.options[0].textContent = 'Predictions CSV';
+  }
+}
+
+async function loadCsv(file, source = 'local') {
   if (!file) return;
+  const loadVersion = ++state.csvLoadVersion;
   try {
     const parsed = parseCsv(await file.text(), file.name);
+    if (loadVersion !== state.csvLoadVersion) return;
     state.predictions = parsed;
-    $('open-predictions').hidden = true;
+    state.predictionSource = source;
+    updateCsvSelection();
     $('decision-symbol').hidden = false;
     $('prediction-value').hidden = false;
     $('reset-predictions').hidden = false;
     updateFrameCheck();
-    $('open-predictions').title = file.name;
     const missing = FRAME_COUNT - parsed.rows;
     const notes = [`${file.name}: ${parsed.rows.toLocaleString()} frames loaded`];
     if (missing) notes.push(`${missing.toLocaleString()} missing`);
@@ -108,6 +158,8 @@ async function loadCsv(file) {
     setFrame(state.frame);
     drawTimeline();
   } catch (error) {
+    if (loadVersion !== state.csvLoadVersion) return;
+    updateCsvSelection();
     setMessage(error.message, true);
   }
 }
@@ -117,7 +169,10 @@ function loadVideo(source, label, objectUrl = false) {
   state.videoUrl = objectUrl ? source : null;
   state.hasVideo = false;
   updateFrameCheck();
-  video.pause();
+  pausePlayback();
+  state.direction = 1;
+  setPlaybackRate(1);
+  resetZoom();
   video.src = source;
   video.load();
   setMessage(`Loading ${label}…`);
@@ -283,18 +338,23 @@ video.addEventListener('loadedmetadata', () => {
   $('stage').classList.add('has-video');
   $('open-video').hidden = true;
   $('reset-video').hidden = false;
+  $('zoom-controls').hidden = false;
+  applyZoom();
   setMessage('');
   updateFromVideo();
 });
 video.addEventListener('error', () => {
+  pausePlayback();
+  $('zoom-controls').hidden = true;
   state.hasVideo = false;
   $('stage').classList.remove('has-video');
   setMessage('Video could not play. Choose a browser-compatible video file.', true);
 });
 video.addEventListener('timeupdate', updateFromVideo);
 video.addEventListener('seeked', updateFromVideo);
-video.addEventListener('play', () => { $('play').textContent = 'Ⅱ'; $('play').setAttribute('aria-label', 'Pause'); });
-video.addEventListener('pause', () => { $('play').textContent = '▶'; $('play').setAttribute('aria-label', 'Play'); });
+video.addEventListener('play', updatePlaybackControls);
+video.addEventListener('pause', updatePlaybackControls);
+video.addEventListener('ended', updatePlaybackControls);
 if (video.requestVideoFrameCallback) {
   const onVideoFrame = (_, metadata) => {
     if (state.hasVideo) setFrame(Math.floor(metadata.mediaTime * FPS + 0.00001));
@@ -303,31 +363,176 @@ if (video.requestVideoFrameCallback) {
   video.requestVideoFrameCallback(onVideoFrame);
 }
 
-$('open-predictions').addEventListener('click', () => $('prediction-file').click());
+$('choose-predictions').addEventListener('click', () => {
+  $('prediction-file').value = '';
+  $('prediction-file').click();
+});
+$('prediction-select').addEventListener('focus', loadCsvOptions);
+$('prediction-select').addEventListener('change', event => {
+  const source = event.target.value;
+  if (!source.startsWith('data:')) return;
+  const name = source.slice(5);
+  loadCsv({ name, text: async () => {
+    const response = await fetch(`data/${encodeURIComponent(name)}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`${name}: could not load CSV.`);
+    return response.text();
+  } }, source);
+});
 $('open-video').addEventListener('click', () => $('video-file').click());
 $('video-file').addEventListener('change', event => {
   const file = event.target.files[0];
   if (file) { $('open-video').title = file.name; loadVideo(URL.createObjectURL(file), file.name, true); }
 });
 $('prediction-file').addEventListener('change', event => loadCsv(event.target.files[0]));
-$('play').addEventListener('click', () => {
+function updatePlaybackControls() {
+  const playing = state.reversing || !video.paused;
+  $('play').textContent = playing ? 'Ⅱ' : '▶';
+  $('play').setAttribute('aria-label', playing ? 'Pause' : state.direction < 0 ? 'Play in reverse' : 'Play');
+  $('slower').setAttribute('aria-pressed', String(playing && state.direction < 0));
+  $('faster').setAttribute('aria-pressed', String(playing && state.direction > 0));
+  for (const option of $('playback-rate').options) {
+    option.textContent = `${state.direction < 0 ? '−' : ''}${option.value}×`;
+  }
+  $('playback-rate').value = String(state.speed);
+}
+
+function pausePlayback() {
+  ++state.playVersion;
+  state.reversing = false;
+  if (state.reverseTimer !== null) cancelAnimationFrame(state.reverseTimer);
+  state.reverseTimer = null;
+  video.pause();
+  updatePlaybackControls();
+}
+
+function startPlayback(direction = state.direction) {
   if (!state.hasVideo) { setMessage('Load a tactical video to play it.', true); return; }
-  if (video.paused) video.play().catch(() => setMessage('Browser could not start playback.', true));
-  else video.pause();
+  pausePlayback();
+  state.direction = direction;
+  if (direction > 0) {
+    video.playbackRate = state.speed;
+    const playVersion = state.playVersion;
+    video.play().catch(error => {
+      if (playVersion !== state.playVersion || error.name === 'AbortError') return;
+      pausePlayback();
+      setMessage('Browser could not start playback.', true);
+    });
+  } else if (video.currentTime > 0) {
+    // Negative playbackRate is not portable. Seek backwards only after each seek completes.
+    state.reversing = true;
+    let last = performance.now();
+    const tick = now => {
+      if (!state.reversing) return;
+      const elapsed = now - last;
+      if (!video.seeking && elapsed >= 1000 / (FPS * state.speed)) {
+        const frames = Math.floor(Math.min(elapsed, 250) * FPS * state.speed / 1000);
+        const target = Math.max(0, Math.round(video.currentTime * FPS) - frames);
+        last = now;
+        seekToFrame(target, true);
+        if (target === 0) { pausePlayback(); return; }
+      }
+      state.reverseTimer = requestAnimationFrame(tick);
+    };
+    state.reverseTimer = requestAnimationFrame(tick);
+  }
+  updatePlaybackControls();
+}
+
+function setPlaybackRate(rate) {
+  state.speed = Math.max(0.25, Math.min(8, rate));
+  video.playbackRate = state.speed;
+  updatePlaybackControls();
+}
+
+$('play').addEventListener('click', () => {
+  if (state.reversing || !video.paused) pausePlayback();
+  else startPlayback();
 });
 for (const [id, delta] of [['back-frame', -1], ['forward-frame', 1]]) {
-  $(id).addEventListener('click', () => { video.pause(); seekToFrame(state.frame + delta); });
+  $(id).addEventListener('click', () => seekToFrame(state.frame + delta));
 }
-function setPlaybackRate(rate) {
-  video.playbackRate = rate;
-  $('playback-rate').textContent = `${rate}×`;
-  $('slower').disabled = rate === 1;
-  $('faster').disabled = rate === 8;
+$('slower').addEventListener('click', () => {
+  if (state.reversing) setPlaybackRate(Math.min(8, state.speed * 2));
+  startPlayback(-1);
+});
+$('faster').addEventListener('click', () => {
+  if (!video.paused && state.direction > 0) setPlaybackRate(Math.min(8, state.speed * 2));
+  startPlayback(1);
+});
+$('playback-rate').addEventListener('change', event => setPlaybackRate(Number(event.target.value)));
+document.addEventListener('visibilitychange', () => { if (document.hidden && state.reversing) pausePlayback(); });
+
+function applyZoom() {
+  const stage = $('stage');
+  const fit = state.hasVideo ? Math.min(stage.clientWidth / video.videoWidth, stage.clientHeight / video.videoHeight) : 0;
+  const maxX = Math.max(0, (video.videoWidth * fit * state.zoom - stage.clientWidth) / 2) || 0;
+  const maxY = Math.max(0, (video.videoHeight * fit * state.zoom - stage.clientHeight) / 2) || 0;
+  state.panX = Math.max(-maxX, Math.min(maxX, state.panX));
+  state.panY = Math.max(-maxY, Math.min(maxY, state.panY));
+  video.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+  $('zoom').value = String(state.zoom);
+  $('reset-zoom').textContent = `${state.zoom.toFixed(2)}×`;
+  $('zoom').setAttribute('aria-valuetext', `${state.zoom.toFixed(2)} times`);
+  $('zoom-out').disabled = state.zoom === 1;
+  $('zoom-in').disabled = state.zoom === 8;
+  stage.classList.toggle('zoomed', state.zoom > 1);
 }
-$('slower').addEventListener('click', () => setPlaybackRate(Math.max(1, video.playbackRate / 2)));
-$('faster').addEventListener('click', () => setPlaybackRate(Math.min(8, video.playbackRate * 2)));
+
+function zoomAt(value, clientX, clientY) {
+  if (!state.hasVideo) return;
+  const bounds = $('stage').getBoundingClientRect();
+  const x = (clientX ?? bounds.left + bounds.width / 2) - bounds.left - bounds.width / 2;
+  const y = (clientY ?? bounds.top + bounds.height / 2) - bounds.top - bounds.height / 2;
+  const next = Math.round(Math.max(1, Math.min(8, value)) * 100) / 100;
+  const factor = next / state.zoom;
+  state.panX = x - (x - state.panX) * factor;
+  state.panY = y - (y - state.panY) * factor;
+  state.zoom = next;
+  applyZoom();
+}
+
+function resetZoom() {
+  state.zoom = 1; state.panX = 0; state.panY = 0;
+  applyZoom();
+}
+
+const overVideoControls = target => Boolean(target.closest('button,input,select,aside,.upload-actions,.zoom-controls'));
+$('zoom').addEventListener('input', event => zoomAt(Number(event.target.value)));
+$('zoom-in').addEventListener('click', () => zoomAt(state.zoom + 0.25));
+$('zoom-out').addEventListener('click', () => zoomAt(state.zoom - 0.25));
+$('reset-zoom').addEventListener('click', resetZoom);
+$('stage').addEventListener('wheel', event => {
+  if (!state.hasVideo || overVideoControls(event.target)) return;
+  event.preventDefault();
+  const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? $('stage').clientHeight : 1);
+  zoomAt(state.zoom * Math.exp(-delta * (event.shiftKey ? 0.0005 : 0.002)), event.clientX, event.clientY);
+}, { passive: false });
+let drag = null;
+$('stage').addEventListener('pointerdown', event => {
+  if (!state.hasVideo || state.zoom === 1 || event.button !== 0 || overVideoControls(event.target)) return;
+  event.preventDefault();
+  drag = { id: event.pointerId, x: event.clientX, y: event.clientY, panX: state.panX, panY: state.panY };
+  $('stage').setPointerCapture(event.pointerId);
+  $('stage').classList.add('panning');
+});
+$('stage').addEventListener('pointermove', event => {
+  if (!drag || event.pointerId !== drag.id) return;
+  state.panX = drag.panX + event.clientX - drag.x;
+  state.panY = drag.panY + event.clientY - drag.y;
+  applyZoom();
+});
+function endPan() { drag = null; $('stage').classList.remove('panning'); }
+$('stage').addEventListener('lostpointercapture', endPan);
+$('stage').addEventListener('pointerup', event => {
+  if (drag?.id === event.pointerId) { $('stage').releasePointerCapture(event.pointerId); endPan(); }
+});
+$('stage').addEventListener('pointercancel', endPan);
+$('stage').addEventListener('dblclick', event => {
+  if (!overVideoControls(event.target)) resetZoom();
+});
+
 $('reset-video').addEventListener('click', () => {
-  video.pause();
+  pausePlayback();
   video.removeAttribute('src');
   video.load();
   if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
@@ -338,16 +543,20 @@ $('reset-video').addEventListener('click', () => {
   $('open-video').removeAttribute('title');
   $('reset-video').hidden = true;
   $('stage').classList.remove('has-video');
+  $('zoom-controls').hidden = true;
+  state.direction = 1;
+  resetZoom();
   setPlaybackRate(1);
   setFrame(0);
   updateFrameCheck();
   setMessage('');
 });
 $('reset-predictions').addEventListener('click', () => {
+  ++state.csvLoadVersion;
   state.predictions = null;
+  state.predictionSource = '';
   $('prediction-file').value = '';
-  $('open-predictions').hidden = false;
-  $('open-predictions').removeAttribute('title');
+  updateCsvSelection();
   $('decision-symbol').hidden = true;
   $('prediction-value').hidden = true;
   $('reset-predictions').hidden = true;
@@ -360,17 +569,19 @@ setPlaybackRate(1);
 $('seek').addEventListener('input', event => seekToFrame(event.target.value));
 $('frame-input').addEventListener('change', event => seekToFrame(event.target.value));
 document.addEventListener('keydown', event => {
-  if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(document.activeElement?.tagName)) return;
+  if (['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(document.activeElement?.tagName)) return;
   if (event.code === 'Space') { event.preventDefault(); $('play').click(); }
   if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-    event.preventDefault(); video.pause();
+    event.preventDefault();
     seekToFrame(state.frame + (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? FPS : 1));
   }
 });
-window.addEventListener('resize', () => { drawTimeline(); drawTrace(); });
+window.addEventListener('resize', () => { applyZoom(); drawTimeline(); drawTrace(); });
 setFrame(0); drawTimeline();
 
 $('jump-reference').addEventListener('click', () => {
-  if (state.reference) { video.pause(); seekToFrame(state.reference.first); }
+  if (state.reference) seekToFrame(state.reference.first);
 });
 loadReference();
+
+loadCsvOptions();

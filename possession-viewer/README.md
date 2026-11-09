@@ -9,8 +9,15 @@ cd possession-viewer
 python3 -m http.server 8080
 ```
 
-Open <http://localhost:8080>. Choose **Open video** and **Predictions CSV**.
-Use ↶ to remove the video, or hover over the prediction letter to remove the CSV. Files stay in your browser.
+Open <http://localhost:8080>. Choose **Open video**, then select a CSV from the
+**Predictions CSV** dropdown. It lists CSV files in `data/`, including generated pipeline outputs.
+Use **Choose file…** to load a CSV from elsewhere on your computer. The dropdown stays visible
+so you can switch predictions at the same video frame. Its file list refreshes when focused.
+Use ↶ to remove the video, or hover over the prediction letter to remove the CSV.
+Manually chosen files stay in your browser; files in `data/` are read from your local server.
+
+The automatic list uses the directory listing from `python3 -m http.server`. If the server
+does not provide directory listings, **Choose file…** still works.
 
 The CSV needs `frame,label` columns with frames 0–199318 and labels H (home),
 A (away), D (dead ball), or X (unknown). The viewer uses 25 fps.
@@ -27,12 +34,28 @@ This checks counts, frame IDs, order, and labels. Matching counts do not establi
 
 ## Controls
 
-- » / «: increase / decrease playback speed through 1×, 2×, 4×, and 8×
-- Space: play or pause
+- «: play in reverse; click again while reversing to double speed, up to 8×
+- »: play forward; click again while playing to double speed, up to 8×
+- Speed dropdown: choose 0.25×, 0.5×, 1×, 2×, 4×, or 8× in the current direction
+- Space: pause or resume in the current direction
 - Left/right: step one frame
 - Shift + left/right: step one second
 - Scrubber: seek
 - Frame number: jump to a frame
+
+Reverse stops at the start of the video. Seeking or stepping a frame pauses continuous playback.
+Reverse uses decoded frame seeks rather than negative browser playback rates; it has no reverse
+audio, and smoothness depends on the browser, video encoding and speed. Use 0.25× or 0.5× to
+inspect touches in either direction.
+
+## Zoom and pan
+
+After loading a video, the controls at the bottom left offer 1–8× zoom. The slider supports
+0.01× adjustments; −/+ buttons move by 0.25×. Scroll over the footage to zoom toward the cursor
+(hold Shift for smaller changes), then drag to pan. The view is constrained to the footage bounds.
+Click the zoom value or double-click the footage to reset the full view. Zoom persists while
+playing, reversing, seeking and switching predictions; removing or replacing the video resets it.
+The prediction/reference graph stays fixed and independent of zoom.
 
 Use the tactical video: the broadcast feed has a different timeline.
 Do not commit licensed match video or datasets.
@@ -64,6 +87,18 @@ Browser regression checks (with `playwright-cli` installed and the viewer served
 ```bash
 playwright-cli open http://localhost:8080
 playwright-cli run-code --filename=possession-viewer/tests/ground-truth.js
+playwright-cli run-code --filename=possession-viewer/tests/csv-picker.js
 ```
 
 Run those commands from the repository root. The two tiny CSV fixtures are synthetic.
+
+Playback and zoom regression checks use a generated six-second synthetic video (FFmpeg required):
+
+```bash
+ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25 -t 6 \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -threads 2 -y \
+  possession-viewer/tests/fixtures/inspection.webm
+playwright-cli run-code --filename=possession-viewer/tests/inspection.js
+```
+
+The generated clip is ignored by Git and contains no match footage.

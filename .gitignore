@@ -21,3 +21,6 @@ pipeline/reports/
 
 # Tiny synthetic viewer regression fixtures
 !possession-viewer/tests/fixtures/*.csv
+
+# Generated synthetic inspection test clip
+possession-viewer/tests/fixtures/inspection.webm

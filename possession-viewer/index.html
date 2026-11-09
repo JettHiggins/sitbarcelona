@@ -16,12 +16,24 @@
         <button class="empty-open" id="open-video" type="button">Open video</button>
         <button id="reset-video" class="reset-button" type="button" aria-label="Remove video" title="Remove video" hidden>↶</button>
       </div>
+      <div class="zoom-controls" id="zoom-controls" role="group" aria-label="Video zoom" hidden>
+        <button id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+        <input id="zoom" type="range" min="1" max="8" step="0.01" value="1" aria-label="Video zoom level">
+        <button id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+        <button id="reset-zoom" type="button" title="Reset zoom and position">1.00×</button>
+        <span class="zoom-hint">Scroll to zoom · drag to pan</span>
+      </div>
       <input id="video-file" type="file" accept="video/*" hidden>
       <input id="prediction-file" type="file" accept=".csv,text/csv" hidden>
       <p id="source-message" role="status" hidden></p>
       <aside class="decision-overlay" aria-label="Possession decision">
+        <div class="csv-picker">
+          <select id="prediction-select" aria-label="Predictions CSV" title="CSV files in data/">
+            <option value="" disabled selected>Predictions CSV</option>
+          </select>
+          <button id="choose-predictions" type="button">Choose file…</button>
+        </div>
         <div class="prediction-control">
-          <button class="empty-open" id="open-predictions" type="button">Predictions CSV</button>
           <div class="prediction-value" id="prediction-value" hidden>
             <span class="decision-caption">Predicted</span>
             <span id="decision-symbol" class="decision-symbol x" aria-label="Current prediction" hidden>—</span>
@@ -42,15 +54,19 @@
       <div class="transport">
         <span class="timecode" id="timecode">00:00:00</span>
         <div class="playback-buttons">
-          <button id="slower" type="button" aria-label="Decrease playback speed" title="Decrease playback speed">«</button>
+          <button id="slower" type="button" aria-label="Rewind" title="Play in reverse; click again to rewind faster" aria-pressed="false">«</button>
           <button id="back-frame" type="button" aria-label="Back one frame" title="Back one frame (←)">‹</button>
           <button id="play" type="button" aria-label="Play" title="Play / pause (Space)">▶</button>
           <button id="forward-frame" type="button" aria-label="Forward one frame" title="Forward one frame (→)">›</button>
-          <button id="faster" type="button" aria-label="Increase playback speed" title="Increase playback speed">»</button>
+          <button id="faster" type="button" aria-label="Play forward" title="Play forward; click again to go faster" aria-pressed="false">»</button>
         </div>
         <div class="utilities">
           <button id="frame-check" type="button" aria-label="Frame count warning" hidden>⚠</button>
-          <span id="playback-rate" aria-live="polite">1×</span>
+          <select id="playback-rate" aria-label="Playback speed" title="Playback speed">
+            <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option><option value="2">2×</option>
+            <option value="4">4×</option><option value="8">8×</option>
+          </select>
           <input id="frame-input" type="number" aria-label="Go to frame" title="Go to frame" min="0" max="199318" value="0">
 
         </div>
