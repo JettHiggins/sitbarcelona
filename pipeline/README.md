@@ -76,6 +76,9 @@ sample has only 17 possessions; full-match agreement with Smart Tagging is a noi
 Both pipelines are offline: smoothing, future events and contextual windows use later frames.
 They are not causal live possession detectors.
 
+For the current Mall implementation, measured public errors, evaluation limitations, and
+recommended additions, see [the pipeline audit](MALL_PIPELINE_AUDIT.md).
+
 ## Isolation and source provenance
 
 - `lenny/`: extracted from `origin/lenny-pipeline`, commit
