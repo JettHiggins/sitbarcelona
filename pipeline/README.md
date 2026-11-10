@@ -23,7 +23,7 @@ Outputs default to `possession-viewer/data/lenny-model.csv` and
 `possession-viewer/data/mall-events.csv`. Use `--output PATH` to select another destination.
 Open the tactical video and one CSV using the viewer's existing file pickers. Switch the CSV
 picker to compare predictions at the same video frame. Serve with
-`python3 -m http.server 8080 --directory possession-viewer`.
+`python3 possession-viewer/server.py` and open <http://127.0.0.1:8081/>.
 
 ## Mall's complete model
 
@@ -50,6 +50,11 @@ For an independent event-first ownership system, use `python -m pipeline.run eve
 It exports `event-first.csv` without Mall's ownership probabilities or sequence decoder;
 tracking cleanup and dead-ball detection are shared. See [event-first rules and commands](event_first/README.md)
 and [measured results](EVENT_FIRST_RESULTS.md). Both variants remain experimental.
+
+`python -m pipeline.run paper --reuse-cache` runs the separate reconstruction of Vidal-Codina
+et al. (2022), using the published gain/loss rules, parameter profiles and event trees. It
+exports `paper.csv`. Read [the fidelity map and input assumptions](paper2022/README.md): the
+paper expects a game-status signal and outputs richer player states than the challenge's H/A/D.
 
 Lenny also supports `--mode nearest`, `dead`, and `decoder` (without its learned model).
 Every mode has a separate default output filename.

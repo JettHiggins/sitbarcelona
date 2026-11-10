@@ -1,5 +1,8 @@
 # Independent event-first possession
 
+This earlier prototype is superseded in the viewer by the [published-method reconstruction](../paper2022/README.md).
+Its implementation and results remain available for comparison.
+
 This is a deterministic ownership algorithm, not a blend with Mall's estimated possession.
 It reads cleaned tracking/features and the existing dead-ball mask. It never loads Mall's
 layer-2 ownership events, layer-4 probabilities or change points, layer-5 predictions, or the
