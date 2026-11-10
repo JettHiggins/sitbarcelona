@@ -139,19 +139,30 @@ function updateCsvSelection() {
 async function loadCsvOptions() {
   const select = $('prediction-select');
   try {
-    // The existing python http.server exposes data/ as an HTML directory listing.
+    // The dedicated server lists files explicitly; ordinary static servers can
+    // still expose data/ as an HTML directory listing.
     const directory = new URL('data/', location.href);
-    const response = await fetch(directory, { cache: 'no-store' });
-    if (!response.ok) throw new Error('CSV list unavailable');
-    const listing = new DOMParser().parseFromString(await response.text(), 'text/html');
     const names = new Set();
-    for (const link of listing.querySelectorAll('a[href]')) {
-      try {
-        const url = new URL(link.getAttribute('href'), directory);
-        if (url.origin !== directory.origin || !url.pathname.startsWith(directory.pathname)) continue;
-        const name = decodeURIComponent(url.pathname.slice(directory.pathname.length));
+    try {
+      const response = await fetch(new URL('api/predictions', location.href), { cache: 'no-store' });
+      if (!response.ok) throw new Error('No prediction endpoint');
+      const files = await response.json();
+      if (!Array.isArray(files) || !files.every(name => typeof name === 'string')) throw new Error('Invalid prediction list');
+      for (const name of files) {
         if (name && !name.includes('/') && !name.includes('\\') && /\.csv$/i.test(name)) names.add(name);
-      } catch { /* Ignore malformed directory entries. */ }
+      }
+    } catch {
+      const response = await fetch(directory, { cache: 'no-store' });
+      if (!response.ok) throw new Error('CSV list unavailable');
+      const listing = new DOMParser().parseFromString(await response.text(), 'text/html');
+      for (const link of listing.querySelectorAll('a[href]')) {
+        try {
+          const url = new URL(link.getAttribute('href'), directory);
+          if (url.origin !== directory.origin || !url.pathname.startsWith(directory.pathname)) continue;
+          const name = decodeURIComponent(url.pathname.slice(directory.pathname.length));
+          if (name && !name.includes('/') && !name.includes('\\') && /\.csv$/i.test(name)) names.add(name);
+        } catch { /* Ignore malformed directory entries. */ }
+      }
     }
     const selected = state.predictionSource;
     select.replaceChildren(new Option(names.size ? 'Predictions CSV' : 'No CSVs in data/', ''));

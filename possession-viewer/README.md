@@ -6,18 +6,23 @@ A local viewer for checking frame-by-frame possession predictions against the ta
 
 ```bash
 cd possession-viewer
-python3 -m http.server 8080
+python3 server.py
 ```
 
-Open <http://localhost:8080>. Choose **Open video**, then select a CSV from the
+Open <http://127.0.0.1:8081/>. The dedicated port avoids cached apps previously served on
+8080, and this server disables HTTP caching and lists predictions through `/api/predictions`.
+Choose **Open video**, then select a CSV from the
 **Predictions CSV** dropdown. It lists CSV files in `data/`, including generated pipeline outputs.
 Use **Choose file…** to load a CSV from elsewhere on your computer. The dropdown stays visible
 so you can switch predictions at the same video frame. Its file list refreshes when focused.
 Use ↶ to remove the video, or hover over the prediction letter to remove the CSV.
 Manually chosen files stay in your browser; files in `data/` are read from your local server.
 
-The automatic list uses the directory listing from `python3 -m http.server`. If the server
-does not provide directory listings, **Choose file…** still works.
+The dedicated server lists predictions directly. On ordinary static servers, the automatic
+list falls back to the `data/` directory listing. **Choose file…** also works without either.
+
+The dedicated-server check is `playwright-cli run-code --filename=possession-viewer/tests/prediction-server.js`.
+Existing viewer regression scripts use port 8080; start `python3 server.py --port 8080` for those.
 
 The CSV needs `frame,label` columns with frames 0–199318 and labels H (home),
 A (away), D (dead ball), or X (unknown). The viewer uses 25 fps.
