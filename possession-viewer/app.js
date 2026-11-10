@@ -19,7 +19,7 @@ const state = {
   direction: 1, speed: 1, reversing: false, reverseTimer: null, playVersion: 0,
   zoom: 1, panX: 0, panY: 0,
   reverseCache: null, cacheVisible: false, reverseMode: null, warmTimer: null,
-  videoFile: null, cancelNativeSeek: null, starting: false,
+  videoFile: null, cancelNativeSeek: null, starting: false, pendingFrame: null,
 };
 
 function setMessage(message, error = false) {
@@ -67,13 +67,37 @@ function setFrame(frame) {
   drawTrace();
 }
 
-function seekToFrame(frame, keepPlaying = false) {
+async function seekToFrame(frame, keepPlaying = false) {
   if (!keepPlaying) pausePlayback(false);
   frame = Math.max(0, Math.min(LAST_FRAME, Math.floor(Number(frame)) || 0));
-  if (state.hasVideo) video.currentTime = frame / FPS;
-  hideCachedFrame();
   ensureTimelineVisible(frame);
-  setFrame(frame);
+  if (!state.hasVideo) { setFrame(frame); return; }
+  frame = Math.min(frame, Math.max(0, Math.ceil(video.duration * FPS) - 1));
+  const version = state.playVersion;
+  const cache = state.reverseCache;
+  state.pendingFrame = frame;
+  if (!state.cacheVisible && video.readyState >= 2) {
+    // Native seeking may replace its image before decoding completes. Cover it
+    // with the current image so the previous label remains paired with it.
+    showCachedFrame(state.frame, { bitmap: video });
+  }
+  // Keep native playback ready, but do not label an image before it is decoded.
+  const synced = syncNativeFrame(frame, version);
+  try {
+    if (!cache) throw new Error('No decoded-frame cache available.');
+    await cache.warm(frame);
+    if (version !== state.playVersion || cache !== state.reverseCache) return;
+    const entry = cache.get(frame);
+    if (!entry) throw new Error('The requested frame could not be decoded.');
+    showCachedFrame(frame, entry);
+  } catch (error) {
+    if (!await synced || version !== state.playVersion) return;
+    hideCachedFrame();
+    // Older browsers retain native seeking when decoded inspection is unavailable.
+    setFrame(frame);
+  }
+  if (version !== state.playVersion) return;
+  state.pendingFrame = null;
   scheduleReverseWarm();
 }
 
@@ -397,7 +421,9 @@ function drawTrace() {
 }
 
 function updateFromVideo() {
-  if (!state.hasVideo || state.cacheVisible) return;
+  if (!state.hasVideo || state.cacheVisible || state.pendingFrame !== null) return;
+  // currentTime is a playback clock, not the timestamp of the displayed image.
+  if (video.requestVideoFrameCallback) return;
   setFrame(Math.floor(video.currentTime * FPS + 0.00001));
 }
 
@@ -431,7 +457,9 @@ video.addEventListener('pause', () => { updatePlaybackControls(); scheduleRevers
 video.addEventListener('ended', updatePlaybackControls);
 if (video.requestVideoFrameCallback) {
   const onVideoFrame = (_, metadata) => {
-    if (state.hasVideo && !state.cacheVisible) setFrame(Math.floor(metadata.mediaTime * FPS + 0.00001));
+    if (state.hasVideo && !state.cacheVisible && state.pendingFrame === null && !video.seeking) {
+      setFrame(Math.round(metadata.mediaTime * FPS));
+    }
     video.requestVideoFrameCallback(onVideoFrame);
   };
   video.requestVideoFrameCallback(onVideoFrame);
@@ -494,17 +522,19 @@ function clearReverseCache() {
 
 function scheduleReverseWarm() {
   clearTimeout(state.warmTimer);
-  if (!state.reverseCache || !state.hasVideo || state.reversing || !video.paused) return;
+  if (!state.reverseCache || !state.hasVideo || state.reversing || !video.paused || state.pendingFrame !== null) return;
   const cache = state.reverseCache;
   state.warmTimer = setTimeout(() => {
-    if (cache === state.reverseCache && !state.reversing && video.paused) cache.warm(state.frame).catch(() => {});
+    if (cache === state.reverseCache && !state.reversing && video.paused && state.pendingFrame === null) cache.warm(state.frame).catch(() => {});
   }, 120);
 }
 
 function showCachedFrame(frame, entry) {
   const canvas = $('reverse-frame');
-  if (canvas.width !== entry.bitmap.width || canvas.height !== entry.bitmap.height) {
-    canvas.width = entry.bitmap.width; canvas.height = entry.bitmap.height;
+  const width = entry.bitmap.videoWidth || entry.bitmap.width;
+  const height = entry.bitmap.videoHeight || entry.bitmap.height;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width; canvas.height = height;
   }
   canvas.getContext('2d', { alpha: false }).drawImage(entry.bitmap, 0, 0);
   state.cacheVisible = true;
@@ -516,6 +546,7 @@ function showCachedFrame(frame, entry) {
 function pausePlayback(sync = true) {
   state.cancelNativeSeek?.();
   ++state.playVersion;
+  state.pendingFrame = null;
   state.starting = false;
   state.reversing = false;
   if (state.reverseTimer !== null) cancelAnimationFrame(state.reverseTimer);
@@ -524,6 +555,8 @@ function pausePlayback(sync = true) {
   if (sync && state.cacheVisible && state.hasVideo) video.currentTime = state.frame / FPS;
   reverseStatus();
   updatePlaybackControls();
+  // Freeze an exact decoded image with its matching label after native playback.
+  if (sync && state.hasVideo && !state.cacheVisible) void seekToFrame(state.frame);
 }
 
 function syncNativeFrame(frame, version) {
@@ -574,7 +607,7 @@ function startSeekReverse() {
 
 async function startPlayback(direction = state.direction) {
   if (!state.hasVideo) { setMessage('Load a tactical video to play it.', true); return; }
-  const startFrame = Math.max(0, Math.min(state.frame, Math.ceil(video.duration * FPS) - 1));
+  const startFrame = Math.max(0, Math.min(state.pendingFrame ?? state.frame, Math.ceil(video.duration * FPS) - 1));
   pausePlayback(false);
   const version = state.playVersion;
   state.direction = direction;
@@ -582,7 +615,7 @@ async function startPlayback(direction = state.direction) {
     state.starting = true;
     updatePlaybackControls();
     state.reverseMode = null;
-    if (state.cacheVisible) {
+    if (state.cacheVisible || video.seeking) {
       if (!await syncNativeFrame(startFrame, version)) return;
       hideCachedFrame();
     }
@@ -679,7 +712,7 @@ $('play').addEventListener('click', () => {
   else startPlayback();
 });
 for (const [id, delta] of [['back-frame', -1], ['forward-frame', 1]]) {
-  $(id).addEventListener('click', () => seekToFrame(state.frame + delta));
+  $(id).addEventListener('click', () => seekToFrame((state.pendingFrame ?? state.frame) + delta));
 }
 $('slower').addEventListener('click', () => stepPlaybackRate(-1));
 $('faster').addEventListener('click', () => stepPlaybackRate(1));
@@ -823,7 +856,7 @@ document.addEventListener('keydown', event => {
   if (event.code === 'Space') { event.preventDefault(); $('play').click(); }
   if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
     event.preventDefault();
-    seekToFrame(state.frame + (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? FPS : 1));
+    seekToFrame((state.pendingFrame ?? state.frame) + (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? FPS : 1));
   }
 });
 window.addEventListener('resize', () => { applyZoom(); drawTimeline(); drawTrace(); });

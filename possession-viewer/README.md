@@ -80,6 +80,12 @@ prediction clock stay on the same frame. Pausing synchronizes the native video o
 forward resumes from the cached position. Seeking, replacing or removing a video cancels stale
 playback work, and replacing/removing it closes the cache's bitmaps and decoder input.
 
+Frame stepping and paused seeks display the exact decoded frame with its matching possession
+label. Quick repeated steps accumulate their requested destination while decoding; the old
+image keeps its old label until the new image is ready. Forward playback takes the frame
+number from the browser's displayed-frame timestamp rather than its playback clock, and
+pausing freezes a decoded frame. Browsers without decoded-frame support retain native seeking.
+
 The dependency is version-pinned and served locally, with its license and source link in
 `vendor/mediabunny/`. There is no CDN, video upload, full-match decode, or reversed video file.
 If the browser or codec cannot supply decoded frames, the viewer labels its slower compatibility
@@ -139,6 +145,7 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25 -t
   possession-viewer/tests/fixtures/inspection.webm
 playwright-cli run-code --filename=possession-viewer/tests/inspection.js
 playwright-cli run-code --filename=possession-viewer/tests/reverse-cache.js
+playwright-cli run-code --filename=possession-viewer/tests/frame-sync.js
 ```
 
 The generated clip is ignored by Git and contains no match footage.
