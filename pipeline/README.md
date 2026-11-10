@@ -1,6 +1,6 @@
 # Possession pipelines
 
-Two independent implementations feed the existing possession viewer. Run commands from the
+Possession implementations feed the existing possession viewer. Run commands from the
 repository root. Generated CSVs and caches stay local; viewer code is unchanged.
 
 ## Install and run
@@ -45,6 +45,11 @@ change-point evidence disabled. It is neither the full model nor Mall's historic
 model and exports `mall-interaction.csv`, leaving `mall-model.csv` available for comparison.
 See [the interaction model](mall/interaction/README.md) for its training protocol, diagnostic
 output, and the explicit `--reuse-cache` option. The original `model` mode remains the default.
+
+For an independent event-first ownership system, use `python -m pipeline.run event-first`.
+It exports `event-first.csv` without Mall's ownership probabilities or sequence decoder;
+tracking cleanup and dead-ball detection are shared. See [event-first rules and commands](event_first/README.md)
+and [measured results](EVENT_FIRST_RESULTS.md). Both variants remain experimental.
 
 Lenny also supports `--mode nearest`, `dead`, and `decoder` (without its learned model).
 Every mode has a separate default output filename.

@@ -74,6 +74,18 @@ def mall(mode, output, reuse_cache=False):
     write_csv(labels, load_layer('layer0')['half'], output)
 
 
+def event_first(output, reuse_cache=False):
+    from .event_first.run import build
+    from .mall.common import CACHE
+    if not reuse_cache:
+        run_module('pipeline.mall.layer0_clean.run')
+        for layer in MALL_LAYERS:
+            run_module(f'pipeline.mall.{layer}.run')
+    labels, half, trace = build(diagnostics=Path(CACHE).parent / 'event_first/tactical.events.json')
+    write_csv(labels, half, output)
+    print(f"Event-first: {len(trace['events'])} events; {len(trace['decisions'])} ownership decisions; no learned possession evidence")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest='pipeline', required=True)
@@ -88,8 +100,12 @@ def main():
                            help='Interaction mode only: explicitly reuse existing Mall tracking/model caches')
     p = subs.add_parser('prepare-mall', help='Build all three training games and their features')
     p.add_argument('--bench-src', type=Path, required=True, help='Local metrica-sports/sample-data checkout')
+    p = subs.add_parser('event-first', help='Independent contact/recovery ownership state machine')
+    p.add_argument('--output', type=Path)
+    p.add_argument('--data-dir', type=Path)
+    p.add_argument('--reuse-cache', action='store_true', help='Explicitly reuse existing tracking/features/dead-ball caches')
     args = parser.parse_args()
-    if getattr(args, 'reuse_cache', False) and args.mode != 'interaction':
+    if args.pipeline == 'mall' and args.reuse_cache and args.mode != 'interaction':
         parser.error('--reuse-cache is only supported with mall --mode interaction')
     os.environ['POSSESSION_GAME'] = 'tactical'
     os.environ.setdefault('OMP_NUM_THREADS', '2')
@@ -109,6 +125,10 @@ def main():
     if args.data_dir:
         data = args.data_dir.resolve()
         os.environ['MTAH_DATA_DIR'] = str(data.parent if data.name == 'tactical' else data)
+    if args.pipeline == 'event-first':
+        output = (args.output or ROOT / 'possession-viewer/data/event-first.csv').resolve()
+        event_first(output, args.reuse_cache)
+        return
     output = (args.output or ROOT / f'possession-viewer/data/{args.pipeline}-{args.mode}.csv').resolve()
     if args.pipeline == 'mall':
         mall(args.mode, output, args.reuse_cache)
