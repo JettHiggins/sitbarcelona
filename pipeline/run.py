@@ -33,24 +33,36 @@ def write_csv(labels, half, path, expected=199319):
     print(f'{path}: {len(letters)} frames')
 
 
-def mall(mode, output):
+def mall(mode, output, reuse_cache=False):
     import numpy as np
     from .mall.common import CACHE, cache_path, load_layer
     from .mall.layer4_possession_model.run import bench_tags
-    if mode == 'model' and not {'bench1', 'bench2', 'bench3'}.issubset(bench_tags()):
+    if mode in ('model', 'interaction') and not {'bench1', 'bench2', 'bench3'}.issubset(bench_tags()):
         raise ValueError('Mall model needs all three bench games. Run python -m pipeline.run prepare-mall --bench-src PATH first, or use --mode events.')
     # Rebuild match stages on every run; do not silently reuse stale caches.
     cache_dir = Path(CACHE)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    run_module('pipeline.mall.layer0_clean.run')
-    for layer in MALL_LAYERS:
-        run_module(f'pipeline.mall.{layer}.run')
-    if mode == 'model':
+    if not reuse_cache:
+        run_module('pipeline.mall.layer0_clean.run')
+        for layer in MALL_LAYERS:
+            run_module(f'pipeline.mall.{layer}.run')
+    if mode in ('model', 'interaction'):
         # Layer 1 was rebuilt above; its cached design must be rebuilt too.
-        (cache_dir / 'models/design_tactical.npz').unlink(missing_ok=True)
-        run_module('pipeline.mall.layer4_possession_model.run')
-        run_module('pipeline.mall.layer5_sequence_decoder.run')
-        labels = load_layer('layer5')['label']
+        if not reuse_cache:
+            (cache_dir / 'models/design_tactical.npz').unlink(missing_ok=True)
+            run_module('pipeline.mall.layer4_possession_model.run')
+            run_module('pipeline.mall.layer5_sequence_decoder.run')
+        if mode == 'interaction':
+            from .mall.interaction.model import TRAIN_GAMES, predict, save_diagnostics, train
+            trained = train(TRAIN_GAMES)
+            result, events, legacy = predict('tactical', trained)
+            np.savez_compressed(cache_path('layer6_interaction'), **result)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            save_diagnostics(output.with_suffix('.interactions.json'), 'tactical', trained,
+                             result, events, legacy)
+            labels = result['label']
+        else:
+            labels = load_layer('layer5')['label']
     else:
         from .mall import config as config
         from .mall.layer5_sequence_decoder.decoder import decode
@@ -66,14 +78,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest='pipeline', required=True)
     for name, choices, default in [('lenny', ['nearest', 'dead', 'decoder', 'model'], 'model'),
-                                   ('mall', ['events', 'model'], 'model')]:
+                                   ('mall', ['events', 'model', 'interaction'], 'model')]:
         p = subs.add_parser(name)
         p.add_argument('--mode', choices=choices, default=default)
         p.add_argument('--output', type=Path)
         p.add_argument('--data-dir', type=Path, help='Data bundle root or tactical folder')
+        if name == 'mall':
+            p.add_argument('--reuse-cache', action='store_true',
+                           help='Interaction mode only: explicitly reuse existing Mall tracking/model caches')
     p = subs.add_parser('prepare-mall', help='Build all three training games and their features')
     p.add_argument('--bench-src', type=Path, required=True, help='Local metrica-sports/sample-data checkout')
     args = parser.parse_args()
+    if getattr(args, 'reuse_cache', False) and args.mode != 'interaction':
+        parser.error('--reuse-cache is only supported with mall --mode interaction')
     os.environ['POSSESSION_GAME'] = 'tactical'
     os.environ.setdefault('OMP_NUM_THREADS', '2')
     os.environ.setdefault('OPENBLAS_NUM_THREADS', '2')
@@ -94,7 +111,7 @@ def main():
         os.environ['MTAH_DATA_DIR'] = str(data.parent if data.name == 'tactical' else data)
     output = (args.output or ROOT / f'possession-viewer/data/{args.pipeline}-{args.mode}.csv').resolve()
     if args.pipeline == 'mall':
-        mall(args.mode, output)
+        mall(args.mode, output, args.reuse_cache)
     else:
         from .lenny import config
         config.OUTPUT = output

@@ -41,6 +41,11 @@ trains the frame and change-point models and exports `possession-viewer/data/mal
 `mall --mode events` is an additional ablation: Mall's current decoder with learned frame and
 change-point evidence disabled. It is neither the full model nor Mall's historical v0 model.
 
+`mall --mode interaction` adds an experimental learned contact/recovery layer to the full
+model and exports `mall-interaction.csv`, leaving `mall-model.csv` available for comparison.
+See [the interaction model](mall/interaction/README.md) for its training protocol, diagnostic
+output, and the explicit `--reuse-cache` option. The original `model` mode remains the default.
+
 Lenny also supports `--mode nearest`, `dead`, and `decoder` (without its learned model).
 Every mode has a separate default output filename.
 
