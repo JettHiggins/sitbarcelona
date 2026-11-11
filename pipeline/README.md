@@ -27,6 +27,13 @@ picker to compare predictions at the same video frame. Serve with
 
 ## Mall's complete model
 
+For the separate **touch-only experiment**, run
+`python -m pipeline.run touches --bench-src /path/to/metrica-sample-data --reuse-cache`.
+It learns player contact scores from the three sample games and immediately switches
+to each detected toucher's team, with no possession decoder or dead-ball labels.
+See [research, training, diagnostics and measured limitations](touches/README.md).
+Its viewer output is `touches.csv`; Mall remains the stronger possession model.
+
 The default `mall --mode model` uses supervised models trained on three other Metrica games.
 It needs the benchmark preparation step; it never silently substitutes event-only predictions.
 

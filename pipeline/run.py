@@ -111,6 +111,12 @@ def main():
     p.add_argument('--profile', choices=['a', 'bc'], default='bc', help='Published provider parameter profiles (BC by default; our provider is not identified as B/C)')
     p.add_argument('--status', choices=['missing', 'provided', 'mall'], default='missing', help='Explicit game-status source; missing follows the paper feed convention')
     p.add_argument('--status-file', type=Path, help='Full frame,in_play binary CSV for --status provided')
+    p = subs.add_parser('touches', help='Learn player touches; switch immediately to each touching team')
+    p.add_argument('--bench-src', type=Path, required=True)
+    p.add_argument('--output', type=Path)
+    p.add_argument('--data-dir', type=Path)
+    p.add_argument('--reuse-cache', action='store_true', help='Reuse parsed raw tracking arrays only')
+    p.add_argument('--skip-evaluation', action='store_true', help='Skip held-out sample-game evaluation')
     args = parser.parse_args()
     if args.pipeline == 'mall' and args.reuse_cache and args.mode != 'interaction':
         parser.error('--reuse-cache is only supported with mall --mode interaction')
@@ -135,6 +141,13 @@ def main():
     if args.pipeline == 'event-first':
         output = (args.output or ROOT / 'possession-viewer/data/event-first.csv').resolve()
         event_first(output, args.reuse_cache)
+        return
+    if args.pipeline == 'touches':
+        if not args.reuse_cache:
+            run_module('pipeline.mall.layer0_clean.run')
+        from .touches.run import build
+        output = (args.output or ROOT / 'possession-viewer/data/touches.csv').resolve()
+        build(args.bench_src.resolve(), output, not args.skip_evaluation)
         return
     if args.pipeline == 'paper':
         if args.status == 'provided' and not args.status_file:
