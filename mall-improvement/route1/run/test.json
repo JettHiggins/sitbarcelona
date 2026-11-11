@@ -1,0 +1,200 @@
+{
+ "current": {
+  "matched:J03WMX": {
+   "spell": 0.5553,
+   "macro": 0.8849,
+   "accuracy": 0.8931,
+   "n_gt": 511,
+   "n_pred": 334,
+   "matches": [
+    282,
+    261,
+    236,
+    212,
+    182
+   ],
+   "dead_recall": 0.9734,
+   "dead_precision": 0.8977
+  },
+  "matched:J03WN1": {
+   "spell": 0.4184,
+   "macro": 0.796,
+   "accuracy": 0.8355,
+   "n_gt": 500,
+   "n_pred": 393,
+   "matches": [
+    248,
+    220,
+    187,
+    150,
+    129
+   ],
+   "dead_recall": 0.9615,
+   "dead_precision": 0.8916
+  },
+  "clean:J03WMX": {
+   "spell": 0.5981,
+   "macro": 0.9093,
+   "accuracy": 0.9161,
+   "n_gt": 511,
+   "n_pred": 315,
+   "matches": [
+    285,
+    269,
+    250,
+    228,
+    203
+   ],
+   "dead_recall": 0.9922,
+   "dead_precision": 0.9097
+  },
+  "clean:J03WN1": {
+   "spell": 0.4834,
+   "macro": 0.8373,
+   "accuracy": 0.8698,
+   "n_gt": 500,
+   "n_pred": 358,
+   "matches": [
+    267,
+    244,
+    203,
+    175,
+    148
+   ],
+   "dead_recall": 0.9914,
+   "dead_precision": 0.8921
+  }
+ },
+ "idsse_clean_models": {
+  "matched:J03WMX": {
+   "spell": 0.4927,
+   "macro": 0.727,
+   "accuracy": 0.7304,
+   "n_gt": 511,
+   "n_pred": 391,
+   "matches": [
+    275,
+    254,
+    226,
+    199,
+    157
+   ],
+   "dead_recall": 0.4894,
+   "dead_precision": 0.9892
+  },
+  "matched:J03WN1": {
+   "spell": 0.4471,
+   "macro": 0.6486,
+   "accuracy": 0.6459,
+   "n_gt": 500,
+   "n_pred": 426,
+   "matches": [
+    268,
+    239,
+    210,
+    178,
+    140
+   ],
+   "dead_recall": 0.457,
+   "dead_precision": 0.9873
+  },
+  "clean:J03WMX": {
+   "spell": 0.6535,
+   "macro": 0.9438,
+   "accuracy": 0.9503,
+   "n_gt": 511,
+   "n_pred": 363,
+   "matches": [
+    322,
+    311,
+    292,
+    266,
+    237
+   ],
+   "dead_recall": 0.9961,
+   "dead_precision": 0.9898
+  },
+  "clean:J03WN1": {
+   "spell": 0.664,
+   "macro": 0.9252,
+   "accuracy": 0.9442,
+   "n_gt": 500,
+   "n_pred": 385,
+   "matches": [
+    341,
+    326,
+    295,
+    272,
+    235
+   ],
+   "dead_recall": 0.9972,
+   "dead_precision": 0.9888
+  }
+ },
+ "selected": {
+  "matched:J03WMX": {
+   "spell": 0.6053,
+   "macro": 0.9223,
+   "accuracy": 0.9293,
+   "n_gt": 511,
+   "n_pred": 358,
+   "matches": [
+    306,
+    291,
+    270,
+    244,
+    204
+   ],
+   "dead_recall": 0.9679,
+   "dead_precision": 0.9904
+  },
+  "matched:J03WN1": {
+   "spell": 0.5823,
+   "macro": 0.8848,
+   "accuracy": 0.9072,
+   "n_gt": 500,
+   "n_pred": 371,
+   "matches": [
+    310,
+    287,
+    257,
+    223,
+    191
+   ],
+   "dead_recall": 0.9531,
+   "dead_precision": 0.9875
+  },
+  "clean:J03WMX": {
+   "spell": 0.6301,
+   "macro": 0.908,
+   "accuracy": 0.9125,
+   "n_gt": 511,
+   "n_pred": 365,
+   "matches": [
+    318,
+    304,
+    280,
+    255,
+    223
+   ],
+   "dead_recall": 0.9105,
+   "dead_precision": 0.9889
+  },
+  "clean:J03WN1": {
+   "spell": 0.5945,
+   "macro": 0.8336,
+   "accuracy": 0.8452,
+   "n_gt": 500,
+   "n_pred": 374,
+   "matches": [
+    304,
+    288,
+    262,
+    240,
+    205
+   ],
+   "dead_recall": 0.8099,
+   "dead_precision": 0.9864
+  }
+ }
+}
