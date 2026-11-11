@@ -118,6 +118,16 @@ in 15300–15400 or 15720–15830, missing the user's short-flip examples. The s
 evidence permits checking weak scores separately from tracking gaps and actor
 ambiguity; do not explain these misses as a possession decoder resisting switches.
 
+Opening-play check: the first half starts at 11185, but the first accepted contact
+is not until 11473. Thus **11185–11472 are X: 288 frames / 11.52 seconds**,
+including Athletic's opening play. Only the first two ball samples are absent;
+152 of the opening 166 frames have valid feature windows. Missing data alone
+does not explain this failure. The strongest Athletic actor score in 11185–11350
+is 0.262 at frame 11264, below the 0.65 acceptance threshold. This is a missed
+contact/generalization problem, not an absent CSV, playback UI issue, or a
+possession switch penalty. The first 12 frames after the missing samples are
+also ineligible under the complete-window gate, which can lose boundary contacts.
+
 The important remaining validation is a small, separately annotated set of actual
 touch times/actors, including negative examples and deflections. With only these
 event proxies, physical all-touch precision/recall cannot be established. 2D

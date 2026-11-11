@@ -48,7 +48,9 @@ async page => {
     await page.evaluate(() => startPlayback(1));
     await page.waitForTimeout(45 + i * 9);
     await page.evaluate(() => pausePlayback());
-    await page.waitForFunction(() => state.pendingFrame === null && state.cacheVisible);
+    await page.waitForFunction(() => video.paused && !video.seeking && state.pendingFrame === null && !state.cacheVisible);
+    // Ordinary pause holds the native displayed image without another seek.
+    await page.waitForTimeout(40);
     const frame = await page.evaluate(() => state.frame);
     const result = await inspect(frame);
     check(result.pixelsMatch && Math.round(result.timestamp * 25) === frame, 'Quick play/pause freezes a matching image and label');

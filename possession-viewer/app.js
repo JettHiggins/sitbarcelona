@@ -554,7 +554,7 @@ function showCachedFrame(frame, entry) {
   setFrame(frame);
 }
 
-function pausePlayback(sync = true) {
+function pausePlayback() {
   state.cancelNativeSeek?.();
   ++state.playVersion;
   state.pendingFrame = null;
@@ -563,11 +563,11 @@ function pausePlayback(sync = true) {
   if (state.reverseTimer !== null) cancelAnimationFrame(state.reverseTimer);
   state.reverseTimer = null;
   video.pause();
-  if (sync && state.cacheVisible && state.hasVideo) video.currentTime = state.frame / FPS;
   reverseStatus();
   updatePlaybackControls();
-  // Freeze an exact decoded image with its matching label after native playback.
-  if (sync && state.hasVideo && !state.cacheVisible) void seekToFrame(state.frame);
+  // Native pause already holds the displayed image. Seeking to its frame here
+  // restarts decoding on every pause/resume and competes with normal playback.
+  // Cached inspection/reverse images stay visible until an explicit handoff.
 }
 
 function syncNativeFrame(frame, version) {
@@ -618,6 +618,7 @@ function startSeekReverse() {
 
 async function startPlayback(direction = state.direction) {
   if (!state.hasVideo) { setMessage('Load a tactical video to play it.', true); return; }
+  const needsHandoff = state.cacheVisible || state.pendingFrame !== null || state.reversing || video.seeking;
   const startFrame = Math.max(0, Math.min(state.pendingFrame ?? state.frame, Math.ceil(video.duration * FPS) - 1));
   pausePlayback(false);
   const version = state.playVersion;
@@ -626,7 +627,9 @@ async function startPlayback(direction = state.direction) {
     state.starting = true;
     updatePlaybackControls();
     state.reverseMode = null;
-    if (state.cacheVisible || video.seeking) {
+    clearTimeout(state.warmTimer);
+    state.reverseCache?.cancelWarm?.();
+    if (needsHandoff) {
       if (!await syncNativeFrame(startFrame, version)) return;
       hideCachedFrame();
     }

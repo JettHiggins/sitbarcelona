@@ -7,6 +7,7 @@ class ReverseFrameCache {
     this.chunks = new Set();
     this.targetChunk = null;
     this.worker = null;
+    this.warmVersion = 0;
     this.disposed = false;
     this.error = null;
     this.bytes = 0;
@@ -48,6 +49,11 @@ class ReverseFrameCache {
 
   get(frame) { return this.frames.get(frame); }
 
+  cancelWarm() {
+    ++this.warmVersion;
+    this.targetChunk = null;
+  }
+
   trim() {
     for (const [frame, entry] of this.frames) {
       if (!this.wanted(Math.floor(frame / this.chunkFrames))) {
@@ -60,14 +66,15 @@ class ReverseFrameCache {
   }
 
   async warm(frame) {
+    const version = ++this.warmVersion;
     try {
       await this.ready;
-      if (this.disposed) return;
+      if (this.disposed || version !== this.warmVersion) return;
       if (this.error) throw this.error;
       this.targetChunk = Math.floor(Math.max(0, frame) / this.chunkFrames);
       this.trim();
       const target = this.targetChunk;
-      do { await this.work(); } while (!this.disposed && target === this.targetChunk && !this.chunks.has(target));
+      do { await this.work(); } while (!this.disposed && version === this.warmVersion && target === this.targetChunk && !this.chunks.has(target));
       if (!this.disposed && this.error) throw this.error;
     } catch (error) {
       if (!this.disposed) { this.error = error; throw error; }
@@ -77,7 +84,7 @@ class ReverseFrameCache {
   work() {
     if (this.worker) return this.worker;
     this.worker = (async () => {
-      while (!this.disposed) {
+      while (!this.disposed && this.targetChunk !== null) {
         const chunk = [this.targetChunk, this.targetChunk - 1, this.targetChunk - 2]
           .find(value => value >= 0 && !this.chunks.has(value));
         if (chunk === undefined) return;

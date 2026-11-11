@@ -81,15 +81,17 @@ memory beyond that. Full 1920×1080 detail is preserved. Larger sources are scal
 Paused positions are warmed in the background. Reverse prefetches earlier sections while
 showing cached frames. Cold starts or refills may briefly hold the image, especially at high
 reverse speeds, without displaying a preparation notice. While refilling, the image and
-prediction clock stay on the same frame. Pausing synchronizes the native video once; switching
-forward resumes from the cached position. Seeking, replacing or removing a video cancels stale
+prediction clock stay on the same frame. Switching forward from inspection or reverse
+synchronizes the native video once. Ordinary forward pause/resume keeps the browser's
+current position without seeking or requesting an exact-frame image. Seeking, replacing or removing a video cancels stale
 playback work, and replacing/removing it closes the cache's bitmaps and decoder input.
 
 Frame stepping and paused seeks display the exact decoded frame with its matching possession
 label. Quick repeated steps accumulate their requested destination while decoding; the old
 image keeps its old label until the new image is ready. Forward playback takes the frame
 number from the browser's displayed-frame timestamp rather than its playback clock, and
-pausing freezes a decoded frame. Browsers without decoded-frame support retain native seeking.
+ordinary pause holds the native displayed image. Forward playback cancels background
+reverse preparation. Browsers without decoded-frame support retain native seeking.
 
 The dependency is version-pinned and served locally, with its license and source link in
 `vendor/mediabunny/`. There is no CDN, video upload, full-match decode, or reversed video file.
@@ -151,6 +153,7 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25 -t
 playwright-cli run-code --filename=possession-viewer/tests/inspection.js
 playwright-cli run-code --filename=possession-viewer/tests/reverse-cache.js
 playwright-cli run-code --filename=possession-viewer/tests/frame-sync.js
+playwright-cli run-code --filename=possession-viewer/tests/native-playback.js
 ```
 
 The generated clip is ignored by Git and contains no match footage.

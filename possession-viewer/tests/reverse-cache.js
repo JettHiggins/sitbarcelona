@@ -49,7 +49,7 @@ async page => {
   check(running.bounded && running.visible, 'Cache stays bounded across reverse chunk boundaries');
   await page.locator('#play').click();
   await page.waitForFunction(() => !video.seeking);
-  check(await page.evaluate(() => Math.abs(video.currentTime - state.frame / FPS) < 0.001), 'Pause synchronizes native video once to the displayed cached frame');
+  check(await page.evaluate(() => window.cacheProbe.seeks === 0), 'Pausing reverse holds its cached image without seeking the native video');
   check(await page.evaluate(() => !state.reversing && state.cacheVisible), 'Paused cached frame stays visible');
 
   await page.locator('#play').click();
