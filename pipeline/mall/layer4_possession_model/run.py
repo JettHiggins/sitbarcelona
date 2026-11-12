@@ -67,7 +67,6 @@ def cross_game(verbose=True):
     M, names = full_matrix(TAG)
     ys = {t: truth(t) for t in train}
     stride = max(3, len(train))                 # more games, same number of rows
-    step = max(1, len(train) // 3)              # ... and of change-point candidates
 
     def cp_data(t, mat):
         half = load_layer("layer0", t)["half"]
@@ -75,7 +74,7 @@ def cross_game(verbose=True):
         # on the dead-ball layer's output for those games
         dead = (ys[t] == 2) if t in ys else load_layer("layer3", t)["dead"]
         fr = X.cp_candidates(dead, half)
-        Xc, cn = X.cp_design(mat, names, load_layer("layer2", t), fr)
+        Xc, cn = X.cp_design(mat, names, load_layer("layer2", t), fr, load_layer("layer1", t))
         return fr, Xc, cn
 
     def fit_frame():
@@ -93,14 +92,14 @@ def cross_game(verbose=True):
         Xs, yy, cn = [], [], None
         for t in train:
             fr_t, Xc_t, cn = cp_data(t, full_matrix(t)[0])
-            Xs.append(Xc_t[::step])
-            yy.append(X.cp_labels(ys[t], fr_t)[::step])
-        return X.fit_cp(Xs, yy, cn)
+            Xs.append(Xc_t)
+            yy.append(X.cp_labels(ys[t], fr_t))
+        return X.fit_cp(Xs, yy, cn, max_iter=C.CP_MAX_ITER)
 
     frame = X.cached(os.path.join(MODELS, "frame_{}.pkl".format(key)), fit_frame)
     p_full = X.predict(frame[0], frame[1], M).astype(np.float32)
     fr, Xc, cn = cp_data(TAG, M)
-    cp = X.cached(os.path.join(MODELS, "cp_{}.pkl".format(key)), fit_cp)
+    cp = X.cached(os.path.join(MODELS, "cpf_{}.pkl".format(key)), fit_cp)
     cp_p = X.predict_cp(cp[0], cp[1], Xc).astype(np.float32)
     if verbose:
         print("cross-game models trained on {}  ({:.0f}s)".format(key, time.time() - t0))

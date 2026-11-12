@@ -124,6 +124,11 @@ POSS_LABEL_PASS_GAP = 75          # frames (3 s)
 # Bench games the cross-game models learn from, by tag prefix: the three Metrica games and
 # the seven DFL games (bench/). ["bench"] reproduces the earlier three-game training.
 POSS_TRAIN_PREFIXES = ["bench", "dfl"]
+# Change-point model: every candidate of every training game, short-window features
+# (crossgame.fine_features), this many boosting rounds. On two held-out games (trained on the
+# eight others) average precision for "possession changes here" went 0.52 -> 0.65 (Metrica 1)
+# and 0.48 -> 0.54 (DFL 1) against the 300-round model without the short windows.
+CP_MAX_ITER = 600
 POSS_FOLDS = 10                   # contiguous time blocks for out-of-fold training
 POSS_BUFFER = 250                 # frames dropped from training either side of a test block
 
@@ -133,7 +138,7 @@ SEQ_W_CONTROL = 1.0               # nats per frame of a player controlling the b
 # Chosen on the bench (possession/bench, spellF1 on three other games, models never trained on
 # the game they are scored on). Before the bench: W_PLAYERS 0.02, W_FULL 0, no change points.
 SEQ_W_PLAYERS = 0.0               # x logit(p_home_players) per frame (self-trained, players only)
-SEQ_W_FULL = 0.35                 # x logit(p_home_full) per frame (cross-game, players + ball)
+SEQ_W_FULL = 0.5                  # x logit(p_home_full) per frame (cross-game, players + ball)
 # Cost of a possession change at a candidate event, and how much a reception by the new team
 # (or a close touch) pays back:
 SEQ_SWITCH_COST = 4.0             # nats
@@ -144,7 +149,11 @@ SEQ_W_KICK = 12.0                  # nats, a kick by the new team (first-time pa
 SEQ_DUR_MEDIAN_S = 10.0
 SEQ_DUR_SIGMA = 1.0
 SEQ_W_DUR = 0.3
-SEQ_W_CP = 1.0                    # x log P(change to team) / P(no change), learned change points
+# Re-swept on five held-out games after the change-point model gained its short-window features
+# (ten-game training): W_FULL 0.35 -> 0.5 and W_CP 1.0 -> 2.0 lift mean spellF1 0.6709 -> 0.6794,
+# the same direction on all five; switch cost, duration prior and event bonuses stayed best as
+# they were. The gain is inside the scorer's noise band for one match.
+SEQ_W_CP = 2.0                    # x log P(change to team) / P(no change), learned change points
 SEQ_CP_OFFSET = 0.0               # nats added to every learned change point
 SEQ_DENSE_GRID = 0                # frames: if > 0, candidate points everywhere on this grid
 SEQ_GAP_GRID = 25                 # frames: candidate points every second inside ball gaps > 2 s

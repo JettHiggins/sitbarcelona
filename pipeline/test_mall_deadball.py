@@ -131,6 +131,51 @@ class BenchDegradationTests(unittest.TestCase):
         self.assertTrue((st["st_set_piece_team"][later - 1] == -1).all())
 
 
+class ShortWindowFeatureTests(unittest.TestCase):
+    def setUp(self):
+        from .mall.layer2_touches.touches import KICK, RECEIVE
+        rng = np.random.default_rng(1)
+        n = 400
+        self.F = {k: rng.uniform(0, 5, n) for k in
+                  ["d_h", "d_a", "relv_h", "relv_a", "closing_h", "closing_a", "n2_h", "n2_a",
+                   "n5_h", "n5_a", "dwell_h", "dwell_a", "nearest_fwd_speed_h",
+                   "nearest_fwd_speed_a", "ball_ahead_h", "ball_ahead_a", "margin",
+                   "ball_fwd_speed_home", "ball_known", "ball_speed", "ball_gap_len",
+                   "ball_frames_since_seen", "ball_frames_until_seen", "ball_to_line",
+                   "ball_outside"]}
+        events = np.array([(100, RECEIVE, 0, 3, 0.5, 1, 1, np.nan, 40, 0.1),
+                           (200, RECEIVE, 1, 7, 0.5, 1, 1, np.nan, 12, 0.6),
+                           (150, KICK, 1, 7, 0.5, 1, 1, np.nan, 0, np.nan)],
+                          dtype=[("frame", "i4"), ("kind", "i1"), ("team", "i1"), ("slot", "i1"),
+                                 ("dist", "f4"), ("speed_before", "f4"), ("speed_after", "f4"),
+                                 ("turn", "f4"), ("duration", "i4"), ("contest", "f4")])
+        ctrl = np.full(n, -1, np.int8)
+        ctrl[100:140], ctrl[200:212] = 0, 1
+        self.L2 = {"events": events, "control_team": ctrl, "last_control_team": ctrl,
+                   "frames_since_control": np.zeros(n, np.int32), "turn": rng.uniform(0, 90, n)}
+        self.frames = np.arange(0, n, 3)
+
+    def test_reception_starting_at_a_candidate_is_described(self):
+        from .mall.layer4_possession_model import crossgame as X
+        A, names = X.fine_features(self.F, self.L2, self.frames)
+        self.assertEqual(A.shape, (len(self.frames), len(names)))
+        row = list(self.frames).index(99)
+        self.assertEqual(A[row, names.index("nextrec_dur_h")], 40)
+        self.assertEqual(A[row, names.index("nextrec_in_h")], 1)
+        self.assertEqual(A[row, names.index("nextrec_dur_a")], 0)       # away's is 4 s away
+        self.assertFalse(np.isnan(A[:, names.index("dmin_fw0_12_h")]).any())
+
+    def test_home_away_swap_is_defined_for_every_short_window_column(self):
+        from .mall.layer4_possession_model import crossgame as X
+        A, names = X.fine_features(self.F, self.L2, self.frames)
+        idx, sgn = X.swap_index(names)
+        self.assertEqual(sorted(idx), list(range(len(names))))          # a permutation
+        np.testing.assert_array_equal(idx[idx], np.arange(len(names)))  # its own inverse
+        flipped = [n for n, s_ in zip(names, sgn) if s_ < 0]
+        self.assertTrue(flipped and all(n.startswith(("margin", "ball_fwd_speed_home"))
+                                        for n in flipped))
+
+
 POSITIONS = """<PutDataRequest><Positions>
 <FrameSet GameSection="firstHalf" TeamId="H" PersonId="p1">
 <Frame N="10000" X="0.0" Y="0.0"/>
