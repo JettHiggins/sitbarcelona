@@ -34,17 +34,24 @@ to each detected toucher's team, with no possession decoder or dead-ball labels.
 See [research, training, diagnostics and measured limitations](touches/README.md).
 Its viewer output is `touches.csv`; Mall remains the stronger possession model.
 
-The default `mall --mode model` uses supervised models trained on three other Metrica games.
+The default `mall --mode model` uses supervised models trained on ten other games: the three
+Metrica sample games and the seven open DFL Bundesliga games (Bassek et al. 2025, CC-BY 4.0).
 It needs the benchmark preparation step; it never silently substitutes event-only predictions.
 
 ```bash
-git clone --depth 1 https://github.com/metrica-sports/sample-data.git /tmp/metrica-sample-data
+git clone https://github.com/metrica-sports/sample-data.git /tmp/metrica-sample-data
+git -C /tmp/metrica-sample-data checkout e706dd506b360d69d9d123d5b8026e7294b13996
 python -m pipeline.run prepare-mall --bench-src /tmp/metrica-sample-data
 python -m pipeline.run mall --mode model
 ```
 
-Preparation builds benchmark labels and layers 0–3 for all three games. The model run then
-trains the frame and change-point models and exports `possession-viewer/data/mall-model.csv`.
+Preparation downloads the DFL games once (~2.6 GB into `data/idsse`, gitignored), then builds
+answer keys and layers 0–2 for all ten games. The model run then trains three models - a
+players-only dead-ball model, the frame model and the change-point model - and exports
+`possession-viewer/data/mall-model.csv`. Training wants about 8 GB of free memory.
+See [what the dead-ball model changed and how it was measured](MALL_DEADBALL_RESULTS.md).
+`python -m pipeline.mall.bench.score` rescores every training game (each by models that never
+saw it) next to the public window.
 `mall --mode events` is an additional ablation: Mall's current decoder with learned frame and
 change-point evidence disabled. It is neither the full model nor Mall's historical v0 model.
 
@@ -73,7 +80,7 @@ python -m pipeline.compare possession-viewer/data/lenny-model.csv possession-vie
 # Optional: official public-sample scores; labels are used only by this comparison command.
 python -m pipeline.compare possession-viewer/data/lenny-model.csv possession-viewer/data/mall-model.csv \
   --truth /path/to/challenge/evaluation/gt/BAR-ATH_possession_gt_public.csv
-python -m unittest pipeline.test_adapters pipeline.lenny.test_invariants
+python -m unittest pipeline.test_adapters pipeline.test_mall_deadball pipeline.lenny.test_invariants
 ```
 
 The comparison checks all 199,319 ordered frame IDs, valid labels, then reports the ungraded mask,

@@ -8,6 +8,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 MALL_LAYERS = ('layer1_features', 'layer2_touches', 'layer3_dead_ball')
+BENCH_TAGS = ('bench1', 'bench2', 'bench3') + tuple(f'dfl{i}' for i in range(1, 8))
 
 
 def run_module(name, game='tactical'):
@@ -37,8 +38,8 @@ def mall(mode, output, reuse_cache=False):
     import numpy as np
     from .mall.common import CACHE, cache_path, load_layer
     from .mall.layer4_possession_model.run import bench_tags
-    if mode in ('model', 'interaction') and not {'bench1', 'bench2', 'bench3'}.issubset(bench_tags()):
-        raise ValueError('Mall model needs all three bench games. Run python -m pipeline.run prepare-mall --bench-src PATH first, or use --mode events.')
+    if mode in ('model', 'interaction') and not set(BENCH_TAGS).issubset(bench_tags()):
+        raise ValueError('Mall model needs all ten bench games. Run python -m pipeline.run prepare-mall --bench-src PATH first, or use --mode events.')
     # Rebuild match stages on every run; do not silently reuse stale caches.
     cache_dir = Path(CACHE)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -98,7 +99,7 @@ def main():
         if name == 'mall':
             p.add_argument('--reuse-cache', action='store_true',
                            help='Interaction mode only: explicitly reuse existing Mall tracking/model caches')
-    p = subs.add_parser('prepare-mall', help='Build all three training games and their features')
+    p = subs.add_parser('prepare-mall', help='Build the ten training games and their features')
     p.add_argument('--bench-src', type=Path, required=True, help='Local metrica-sports/sample-data checkout')
     p = subs.add_parser('event-first', help='Independent contact/recovery ownership state machine')
     p.add_argument('--output', type=Path)
@@ -125,13 +126,20 @@ def main():
     os.environ.setdefault('OPENBLAS_NUM_THREADS', '2')
     if args.pipeline == 'prepare-mall':
         os.environ['BENCH_SRC'] = str(args.bench_src.resolve())
-        run_module('pipeline.mall.bench.build')
-        for tag in ('bench1', 'bench2', 'bench3'):
-            for layer in MALL_LAYERS:
+        # Three Metrica games (local checkout) and seven open DFL games (downloaded once).
+        subprocess.run([sys.executable, '-m', 'pipeline.mall.bench.idsse', '--download'],
+                       cwd=ROOT, check=True)
+        subprocess.run([sys.executable, '-m', 'pipeline.mall.bench.build', '--games', '1', '2', '3',
+                        '--dfl', '1', '2', '3', '4', '5', '6', '7'], cwd=ROOT, env=dict(os.environ),
+                       check=True)
+        # Training reads the bench games' features and answer keys only (layers 1-2); their
+        # own dead-ball layer is run by bench/score.py when they are scored.
+        for tag in BENCH_TAGS:
+            for layer in MALL_LAYERS[:2]:
                 run_module(f'pipeline.mall.{layer}.run', tag)
         from .mall.common import CACHE
         model_dir = Path(CACHE) / 'models'
-        for pattern in ('design_*.npz', 'frame_*.pkl', 'cp_*.pkl'):
+        for pattern in ('design_*.npz', 'deadp_design_*.npz', 'frame_*.pkl', 'cp_*.pkl', 'deadp_*.pkl'):
             for path in model_dir.glob(pattern):
                 path.unlink()
         return

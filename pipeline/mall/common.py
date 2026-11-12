@@ -29,6 +29,17 @@ def load_layer(layer, source=None):
     return np.load(path, allow_pickle=False)
 
 
+# --- bench games (other matches with an answer key; see bench/) ----------------------------------
+def bench_tags():
+    d = os.path.join(CACHE, "bench")
+    return sorted(f[:-7] for f in os.listdir(d) if f.endswith("_gt.csv")) if os.path.isdir(d) else []
+
+
+def train_tags(tag, prefixes=("bench", "dfl")):
+    """Bench games a model for `tag` may learn from: every one but `tag` itself."""
+    return [t for t in bench_tags() if t != tag and t.startswith(tuple(prefixes))]
+
+
 # --- Smart Tagging ------------------------------------------------------------------------------
 # Which side a phase code says is in possession, relative to the phase's Team tag. Read off the
 # data, not assumed: on "attacking" codes the tagged team's player is nearest the ball 63-76% of

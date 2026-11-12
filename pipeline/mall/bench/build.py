@@ -22,7 +22,7 @@ import numpy as np
 
 from ..common import CACHE
 from ..layer0_clean.run import clean
-from . import degrade, labels, metrica
+from . import degrade, idsse, labels, metrica
 
 BENCH = os.path.join(CACHE, "bench")
 
@@ -77,12 +77,43 @@ def build_game(g, verbose=True):
     return tag
 
 
+def build_dfl(i, verbose=True):
+    """One open DFL match (bench/idsse.py): frame-exact key from the feed's ball status and
+    possession, players degraded as for Metrica, ball hidden as the challenge's tracker does."""
+    t0 = time.time()
+    tag = "dfl{}".format(i)
+    G = idsse.load(idsse.MATCHES[i - 1])
+    n = len(G["label"])
+    graded = G["period"] > 0
+    lab = np.where(graded, G["label"], -1).astype(np.int8)
+    seed = 2000 + i
+    Q, tos = degrade.players(G["players"], G["team_of_slot"], seed=seed, pitch=G["pitch"])
+    ball = degrade.ball_dropouts(G["ball"], lab == 2, G["period"], seed, G["ball_z"])
+    st = degrade.set_piece_tags_from_key(lab, G["ball"], G["pitch"], n, seed)
+    half = np.where(graded, G["period"], 0).astype(np.int8)
+    raw = {"players": Q, "ball": ball, "present": np.ones(n, bool)}
+    z = clean(raw, tos, G["names"], {}, half, G["pitch"], tag, verbose=verbose)
+    os.makedirs(BENCH, exist_ok=True)
+    np.savez_compressed(os.path.join(CACHE, "layer0_{}.npz".format(tag)), **z)
+    np.savez_compressed(os.path.join(BENCH, tag + "_smart_tagging.npz"), **st)
+    write_csv(os.path.join(BENCH, tag + "_gt.csv"), labels.to_letters(lab))
+    base = np.where(graded, baseline(Q, tos, ball, G["pitch"]), "X")
+    write_csv(os.path.join(BENCH, tag + "_baseline.csv"), base)
+    if verbose:
+        print("{}: {} frames, {} slots after degradation, {:.0f}s".format(tag, n, Q.shape[1],
+                                                                     time.time() - t0))
+    return tag
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--games", type=int, nargs="+", default=[1, 2, 3])
+    p.add_argument("--games", type=int, nargs="*", default=[1, 2, 3], help="Metrica games")
+    p.add_argument("--dfl", type=int, nargs="*", default=[], help="DFL matches 1-7")
     a = p.parse_args()
     for g in a.games:
         build_game(g)
+    for i in a.dfl:
+        build_dfl(i)
 
 
 if __name__ == "__main__":
