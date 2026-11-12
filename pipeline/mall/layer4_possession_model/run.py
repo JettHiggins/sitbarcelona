@@ -105,6 +105,46 @@ def cross_game(verbose=True):
         print("cross-game models trained on {}  ({:.0f}s)".format(key, time.time() - t0))
     return {"p_home_full": p_full, "cp_frames": fr.astype(np.int32), "cp_p": cp_p}
 
+def sequence_features(tag):
+    """sequence.features of one game, cached (derived data; gitignored)."""
+    from . import sequence as Q
+    from ..common import cache_path
+    path = os.path.join(MODELS, "seq_feat_{}.npy".format(tag))
+    if os.path.isfile(path) and os.path.getmtime(path) >= os.path.getmtime(cache_path("layer0", tag)):
+        return np.load(path)
+    f = Q.features(load_layer("layer0", tag))
+    os.makedirs(MODELS, exist_ok=True)
+    np.save(path, f)
+    return f
+
+
+def sequence_game(verbose=True):
+    """p_home_full, cp_frames, cp_p for the current game from the trajectory model
+    (sequence.py), trained on the other games: the same outputs as cross_game()."""
+    import torch
+    from . import sequence as Q
+    from .. import config as C
+    t0 = time.time()
+    train = train_tags(TAG, C.POSS_TRAIN_PREFIXES)
+    if not train:
+        raise IOError("no bench games: run python -m pipeline.mall.bench.build (see bench/README.md)")
+    key = "+".join(train)
+    path = os.path.join(MODELS, "seq_{}.pt".format(key))
+    if os.path.isfile(path):
+        state = torch.load(path, map_location="cpu", weights_only=True)
+    else:
+        games = [(sequence_features(t), truth(t), load_layer("layer0", t)["half"]) for t in train]
+        state = Q.train(games, seed=C.SEQ_MODEL_SEED)
+        torch.save(state, path)
+    half = load_layer("layer0")["half"]
+    p_home, p_change = Q.predict(state, sequence_features(TAG), half)
+    fr = X.cp_candidates(load_layer("layer3")["dead"], half)
+    if verbose:
+        print("trajectory model trained on {}  ({:.0f}s)".format(key, time.time() - t0))
+    return {"p_home_full": p_home, "cp_frames": fr.astype(np.int32),
+            "cp_p": p_change[fr].astype(np.float32)}
+
+
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
@@ -130,7 +170,7 @@ def build(verbose=True, with_passes=True, params=None):
         # bench), so they are not trained: neutral evidence, identical decoded output.
         out["p_home_players"] = np.full(len(y), 0.5, np.float32)
         out["p_home_full_self"] = np.full(len(y), 0.5, np.float32)
-    out.update(cross_game(verbose))
+    out.update(sequence_game(verbose) if C.POSS_MODEL == "sequence" else cross_game(verbose))
     if verbose:
         print("labels: {} frames ({:.0%} home)  ({:.0f}s)".format(
             int((y >= 0).sum()), float(np.mean(y[y >= 0] == 1)), time.time() - t0))

@@ -1,6 +1,7 @@
 """Run an isolated pipeline and export predictions for the possession viewer."""
 import argparse
 import importlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -38,7 +39,7 @@ def mall(mode, output, reuse_cache=False):
     import numpy as np
     from .mall.common import CACHE, cache_path, load_layer
     from .mall.layer4_possession_model.run import bench_tags
-    if mode in ('model', 'interaction') and not set(BENCH_TAGS).issubset(bench_tags()):
+    if mode in ('model', 'boosted', 'interaction') and not set(BENCH_TAGS).issubset(bench_tags()):
         raise ValueError('Mall model needs all ten bench games. Run python -m pipeline.run prepare-mall --bench-src PATH first, or use --mode events.')
     # Rebuild match stages on every run; do not silently reuse stale caches.
     cache_dir = Path(CACHE)
@@ -47,7 +48,12 @@ def mall(mode, output, reuse_cache=False):
         run_module('pipeline.mall.layer0_clean.run')
         for layer in MALL_LAYERS:
             run_module(f'pipeline.mall.{layer}.run')
-    if mode in ('model', 'interaction'):
+    if mode in ('boosted', 'interaction'):      # the interaction experiment builds on these
+        # The gradient-boosted frame and change-point models in place of the trajectory model,
+        # with the decoder weights chosen for them (the layers read this in their own processes).
+        from .mall import config as mall_config
+        os.environ['MALL_OVERRIDES'] = json.dumps(dict(mall_config.BOOSTED_WEIGHTS, POSS_MODEL='boosted'))
+    if mode in ('model', 'boosted', 'interaction'):
         # Layer 1 was rebuilt above; its cached design must be rebuilt too.
         if not reuse_cache:
             (cache_dir / 'models/design_tactical.npz').unlink(missing_ok=True)
@@ -91,7 +97,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest='pipeline', required=True)
     for name, choices, default in [('lenny', ['nearest', 'dead', 'decoder', 'model'], 'model'),
-                                   ('mall', ['events', 'model', 'interaction'], 'model')]:
+                                   ('mall', ['events', 'model', 'boosted', 'interaction'], 'model')]:
         p = subs.add_parser(name)
         p.add_argument('--mode', choices=choices, default=default)
         p.add_argument('--output', type=Path)

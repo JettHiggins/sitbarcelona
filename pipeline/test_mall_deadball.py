@@ -176,6 +176,70 @@ class ShortWindowFeatureTests(unittest.TestCase):
                                         for n in flipped))
 
 
+def layer0_stub(n=600, seed=0):
+    rng = np.random.default_rng(seed)
+    k = 22
+    xy = rng.uniform(5, 60, (n, k, 2)).astype(np.float32)
+    ball = xy[:, 0] + rng.normal(0, 0.5, (n, 2)).astype(np.float32)   # home slot 0 has it
+    ball[200:260] = np.nan
+    since = np.zeros(n, np.int32)
+    since[200:260] = np.arange(1, 61)
+    return {"player_xy": xy, "player_vel": rng.normal(0, 2, (n, k, 2)).astype(np.float32),
+            "player_team": np.tile(np.r_[np.zeros(11), np.ones(11)].astype(np.int8), (n, 1)),
+            "ball_xy": ball, "ball_vel": rng.normal(0, 3, (n, 2)).astype(np.float32),
+            "half": np.ones(n, np.int8), "pitch": np.array([105.0, 68.0]),
+            "attack_sign": np.array([[0, 0], [1, -1], [-1, 1]], np.int8),
+            "ball_frames_since_seen": since, "ball_frames_until_seen": since[::-1].copy()}
+
+
+class TrajectoryFeatureTests(unittest.TestCase):
+    def test_swapping_the_team_labels_swaps_the_two_blocks(self):
+        from .mall.layer4_possession_model import sequence as Q
+        z = layer0_stub()
+        a = Q.features(z)
+        z2 = dict(z, player_team=1 - z["player_team"], attack_sign=z["attack_sign"][:, ::-1])
+        np.testing.assert_allclose(Q.features(z2), Q.swap_teams(a), atol=1e-6)
+        self.assertEqual(a.shape, (600, Q.DIM))
+        self.assertFalse(np.isnan(a).any())
+
+    def test_nearest_player_is_first_and_a_lost_ball_blanks_the_ball_parts(self):
+        from .mall.layer4_possession_model import sequence as Q
+        a = Q.features(layer0_stub())
+        self.assertLess(a[:200, 0].max(), 0.4)                 # home's nearest is within ~4 m
+        self.assertTrue((a[:200, 0] <= a[:200, Q.PER_PLAYER]).all())    # sorted by distance
+        self.assertTrue((a[200:260, :Q.K_NEAR * Q.PER_PLAYER] == 0).all())
+        self.assertTrue((a[200:260, 2 * Q.BLOCK] == 0).all())  # ball_known
+
+    def test_change_targets_mark_six_frames_either_side_and_skip_dead_ball(self):
+        from .mall.layer4_possession_model import sequence as Q
+        truth = np.r_[np.zeros(50), np.ones(50), np.full(20, 2), np.zeros(30)].astype(int)
+        poss, ch = Q.targets(truth)
+        np.testing.assert_array_equal(np.flatnonzero(ch == 2), np.arange(44, 57))   # to away at 50
+        self.assertFalse((ch == 1).any())                      # away -> dead -> home is a restart
+        self.assertTrue((ch[100:120] == -1).all() and (poss[100:120] == -1).all())
+        self.assertTrue((poss[:50] == 1).all() and (poss[50:100] == 0).all())
+
+    def test_training_is_repeatable_and_predictions_respect_team_order(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("PyTorch not installed")
+        from .mall.layer4_possession_model import sequence as Q
+        z = layer0_stub(n=1400)
+        X = Q.features(z)
+        truth = np.zeros(1400, np.int64)
+        with patch.object(Q, "BATCH", 4), patch.object(Q, "HIDDEN", 16),                 patch.object(torch.cuda, "is_available", lambda: False):
+            a = Q.train([(X, truth, z["half"])], seed=3, steps=5)
+            b = Q.train([(X, truth, z["half"])], seed=3, steps=5)
+            for key in a:
+                self.assertTrue(torch.equal(a[key], b[key]), key)
+            p, c = Q.predict(a, X, z["half"])
+            ps, cs = Q.predict(a, Q.swap_teams(X), z["half"])
+        np.testing.assert_allclose(p, 1 - ps, atol=1e-5)       # swap the teams, swap the answer
+        np.testing.assert_allclose(c[:, 1], cs[:, 2], atol=1e-5)
+        np.testing.assert_allclose(c.sum(axis=1), 1.0, atol=1e-5)
+
+
 POSITIONS = """<PutDataRequest><Positions>
 <FrameSet GameSection="firstHalf" TeamId="H" PersonId="p1">
 <Frame N="10000" X="0.0" Y="0.0"/>

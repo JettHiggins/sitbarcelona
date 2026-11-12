@@ -4,3 +4,6 @@ scipy>=1.14,<2
 scikit-learn>=1.5,<2
 threadpoolctl>=3.5,<4
 kloppy==3.18.0
+# Mall's trajectory model (mall --mode model). CPU wheels work; for an NVIDIA GPU install the
+# CUDA build first: pip install torch --index-url https://download.pytorch.org/whl/cu124
+torch>=2.6,<3

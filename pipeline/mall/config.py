@@ -121,6 +121,11 @@ POSS_LABEL_MAX_CONTEST = 0.25
 # Also label the ball travelling between two controls of the same team (a completed pass)
 # when the hand-over takes at most this long.
 POSS_LABEL_PASS_GAP = 75          # frames (3 s)
+# Which cross-game model supplies the frame evidence and the change points to the decoder:
+# "sequence" - a recurrent network over the raw trajectories (layer4/sequence.py; needs PyTorch),
+# "boosted"  - the gradient-boosted frame and change-point models (crossgame.py).
+POSS_MODEL = "sequence"
+SEQ_MODEL_SEED = 0
 # Bench games the cross-game models learn from, by tag prefix: the three Metrica games and
 # the seven DFL games (bench/). ["bench"] reproduces the earlier three-game training.
 POSS_TRAIN_PREFIXES = ["bench", "dfl"]
@@ -138,7 +143,7 @@ SEQ_W_CONTROL = 1.0               # nats per frame of a player controlling the b
 # Chosen on the bench (possession/bench, spellF1 on three other games, models never trained on
 # the game they are scored on). Before the bench: W_PLAYERS 0.02, W_FULL 0, no change points.
 SEQ_W_PLAYERS = 0.0               # x logit(p_home_players) per frame (self-trained, players only)
-SEQ_W_FULL = 0.5                  # x logit(p_home_full) per frame (cross-game, players + ball)
+SEQ_W_FULL = 1.0                  # x logit(p_home_full) per frame (cross-game, players + ball)
 # Cost of a possession change at a candidate event, and how much a reception by the new team
 # (or a close touch) pays back:
 SEQ_SWITCH_COST = 4.0             # nats
@@ -149,11 +154,13 @@ SEQ_W_KICK = 12.0                  # nats, a kick by the new team (first-time pa
 SEQ_DUR_MEDIAN_S = 10.0
 SEQ_DUR_SIGMA = 1.0
 SEQ_W_DUR = 0.3
-# Re-swept on five held-out games after the change-point model gained its short-window features
-# (ten-game training): W_FULL 0.35 -> 0.5 and W_CP 1.0 -> 2.0 lift mean spellF1 0.6709 -> 0.6794,
-# the same direction on all five; switch cost, duration prior and event bonuses stayed best as
-# they were. The gain is inside the scorer's noise band for one match.
-SEQ_W_CP = 2.0                    # x log P(change to team) / P(no change), learned change points
+# W_FULL and W_CP were swept on five held-out games for each model that can supply the evidence:
+#   trajectory model (POSS_MODEL "sequence")  W_FULL 1.0, W_CP 1.0   mean spellF1 0.768
+#   boosted models   (POSS_MODEL "boosted")   W_FULL 0.5, W_CP 2.0   mean spellF1 0.679
+# Around either pair the mean moves by less than 0.01; switch cost, duration prior and event
+# bonuses stayed best where they were. BOOSTED_WEIGHTS is what `mall --mode boosted` applies.
+SEQ_W_CP = 1.0                    # x log P(change to team) / P(no change), learned change points
+BOOSTED_WEIGHTS = {"SEQ_W_FULL": 0.5, "SEQ_W_CP": 2.0}
 SEQ_CP_OFFSET = 0.0               # nats added to every learned change point
 SEQ_DENSE_GRID = 0                # frames: if > 0, candidate points everywhere on this grid
 SEQ_GAP_GRID = 25                 # frames: candidate points every second inside ball gaps > 2 s

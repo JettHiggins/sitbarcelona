@@ -46,9 +46,12 @@ python -m pipeline.run mall --mode model
 ```
 
 Preparation downloads the DFL games once (~2.6 GB into `data/idsse`, gitignored), then builds
-answer keys and layers 0–2 for all ten games. The model run then trains three models - a
-players-only dead-ball model, the frame model and the change-point model - and exports
-`possession-viewer/data/mall-model.csv`. Training wants about 8 GB of free memory.
+answer keys and layers 0–2 for all ten games. The model run then trains a players-only
+dead-ball model and a trajectory model (a small recurrent network over the raw tracking; needs
+PyTorch, and a GPU to be quick) and exports `possession-viewer/data/mall-model.csv`.
+`mall --mode boosted` swaps the trajectory model for the gradient-boosted frame and change-point
+models and exports `mall-boosted.csv`; it needs no PyTorch. Training wants about 8 GB of free
+memory.
 See [what the dead-ball model changed and how it was measured](MALL_DEADBALL_RESULTS.md).
 `python -m pipeline.mall.bench.score` rescores every training game (each by models that never
 saw it) next to the public window.
