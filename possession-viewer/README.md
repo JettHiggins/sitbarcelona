@@ -49,7 +49,7 @@ This checks counts, frame IDs, order, and labels. Matching counts do not establi
 - Space: pause or resume in the current direction
 - Left/right: step one frame
 - Shift + left/right: step one second
-- Scrubber: seek
+- Scrubber: live video previews while dragging; exact frame on release
 - Frame number: jump to a frame
 - Scroll over the bottom timeline: zoom around the cursor, down to a one-second/25-frame view
 - Shift+scroll (or horizontal trackpad scroll) over the timeline: pan the visible window
@@ -72,19 +72,34 @@ touches in either direction. Reverse audio is not played.
 ## Reverse-frame cache
 
 [Mediabunny](vendor/mediabunny/README.md) reads short sections directly from the chosen local
-file and decodes them into independent frame bitmaps. The current section and two preceding
-sections are retained, with older bitmaps explicitly closed. The cache adapts section size to
-resolution and caps stored RGBA frame data at **256 MiB**; decoder and display buffers add some
-memory beyond that. Full 1920×1080 detail is preserved. Larger sources are scaled to a maximum
-1920-pixel edge for cached reverse; normal forward playback keeps the original resolution.
+file through WebCodecs. A module worker handles decoding and frame preparation, transferring
+ready frames to the viewer. If workers cannot start, the same decoder runs on the main thread.
+Copyable native video planes are retained as independent `VideoFrame` objects, avoiding an
+RGBA canvas conversion for every decoded frame. Decoder surfaces are released immediately.
+Rotated, scaled, or opaque sources use the canvas/bitmap compatibility path.
 
-Paused positions are warmed in the background. Reverse prefetches earlier sections while
+The current section and two preceding sections are retained, with older frames explicitly closed.
+The cache adapts section size to resolution and pixel format and caps stored frame data at
+**256 MiB**; decoder, transfer, temporary-copy, and display buffers add memory beyond that.
+For the 1080p H.264 tactical video, packed frames use 3,110,400 bytes instead of 8,294,400 RGBA
+bytes, allowing three one-second sections in the same budget. Full 1920×1080 detail is preserved.
+Larger sources are scaled to a maximum 1920-pixel edge for cached reverse; normal forward
+playback keeps the original resolution.
+
+Paused positions are warmed in the background. Reverse primes the current and two preceding
+sections before starting, then prefetches earlier sections while
 showing cached frames. Cold starts or refills may briefly hold the image, especially at high
 reverse speeds, without displaying a preparation notice. While refilling, the image and
 prediction clock stay on the same frame. Switching forward from inspection or reverse
 synchronizes the native video once. Ordinary forward pause/resume keeps the browser's
 current position without seeking or requesting an exact-frame image. Seeking, replacing or removing a video cancels stale
-playback work, and replacing/removing it closes the cache's bitmaps and decoder input.
+playback work, and replacing/removing it closes the cached frames, decoder input, and worker.
+
+Dragging the scrubber uses native video previews, with one seek in flight and only the latest
+destination queued. Reverse-cache decoding is suspended during the drag. Releasing the scrubber
+restores exact inspection; keyboard scrubbing settles after a brief idle. Browsers with fast seeking
+may show nearby keyframes during dragging. Exact inspection waits only for the requested cache
+section; earlier sections prefetch in the background.
 
 Frame stepping and paused seeks display the exact decoded frame with its matching possession
 label. Quick repeated steps accumulate their requested destination while decoding; the old
@@ -152,8 +167,11 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25 -t
   possession-viewer/tests/fixtures/inspection.webm
 playwright-cli run-code --filename=possession-viewer/tests/inspection.js
 playwright-cli run-code --filename=possession-viewer/tests/reverse-cache.js
+playwright-cli run-code --filename=possession-viewer/tests/reverse-worker.js
 playwright-cli run-code --filename=possession-viewer/tests/frame-sync.js
 playwright-cli run-code --filename=possession-viewer/tests/native-playback.js
+playwright-cli run-code --filename=possession-viewer/tests/seek-playback.js
+playwright-cli run-code --filename=possession-viewer/tests/scrubbing.js
 ```
 
 The generated clip is ignored by Git and contains no match footage.
@@ -161,7 +179,8 @@ The generated clip is ignored by Git and contains no match footage.
 The cache checks use a deliberately small 8 MiB budget to force section changes. They compare
 cached/native frame pixels and timestamps and check bounded memory, bitmap disposal, zero
 native seeks during cached reverse, forward handoff, cancelled preparation, file replacement,
-and unsupported-decoder fallback. A manual Chromium check on the 1920×1080 H.264 tactical file
-at frame 12000 displayed 106 distinct frames in 4.2 seconds at −1×, with zero per-frame native
-video seeks and a maximum sampled inter-frame gap of 64 ms. This is a local observation, not a
-performance guarantee on other machines or codecs.
+and unsupported-decoder fallback. A local Chromium comparison on the 1920×1080 H.264 tactical file at frame 12000 measured
+a maximum display gap of 203 ms before these changes. With worker decoding, packed planes,
+and priming, a ten-second −1× run advanced 249 frames with zero cache misses and a maximum
+display gap of 54 ms; priming took 282 ms. This is a local observation, not a performance
+guarantee on other machines or codecs.

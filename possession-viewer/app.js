@@ -20,6 +20,7 @@ const state = {
   zoom: 1, panX: 0, panY: 0,
   reverseCache: null, cacheVisible: false, reverseMode: null, warmTimer: null,
   videoFile: null, cancelNativeSeek: null, starting: false, pendingFrame: null,
+  scrubbing: false, scrubDragging: false, scrubTimer: null, scrubRequest: null,
 };
 
 function setMessage(message, error = false) {
@@ -53,7 +54,7 @@ function updateFrameCheck() {
 
 function setFrame(frame) {
   frame = Math.max(0, Math.min(LAST_FRAME, Math.floor(frame) || 0));
-  if (frame !== state.frame) ensureTimelineVisible(frame);
+  if (frame !== state.frame && !state.scrubbing) ensureTimelineVisible(frame);
   state.frame = frame;
   $('timecode').textContent = formatTime(frame / FPS);
   updateTimelinePosition();
@@ -67,8 +68,8 @@ function setFrame(frame) {
   drawTrace();
 }
 
-async function seekToFrame(frame, keepPlaying = false) {
-  if (!keepPlaying) pausePlayback(false);
+async function seekToFrame(frame) {
+  pausePlayback(false);
   frame = Math.max(0, Math.min(LAST_FRAME, Math.floor(Number(frame)) || 0));
   ensureTimelineVisible(frame);
   if (!state.hasVideo) { setFrame(frame); return; }
@@ -76,6 +77,7 @@ async function seekToFrame(frame, keepPlaying = false) {
   const version = state.playVersion;
   const cache = state.reverseCache;
   state.pendingFrame = frame;
+  updateTimelinePosition();
   if (!state.cacheVisible && video.readyState >= 2) {
     // Native seeking may replace its image before decoding completes. Cover it
     // with the current image so the previous label remains paired with it.
@@ -99,6 +101,43 @@ async function seekToFrame(frame, keepPlaying = false) {
   if (version !== state.playVersion) return;
   state.pendingFrame = null;
   scheduleReverseWarm();
+}
+
+// Drag previews use the browser decoder, with one seek in flight and only the
+// latest destination queued. Exact inspection and reverse prefetch wait for release.
+function previewScrub(frame) {
+  if (!state.scrubbing) {
+    pausePlayback(false);
+    state.scrubbing = true;
+    clearTimeout(state.warmTimer);
+    state.reverseCache?.cancelWarm?.();
+    hideCachedFrame();
+  }
+  frame = Math.max(0, Math.min(LAST_FRAME, Math.floor(Number(frame)) || 0));
+  if (state.hasVideo) frame = Math.min(frame, Math.max(0, Math.ceil(video.duration * FPS) - 1));
+  state.pendingFrame = frame;
+  updateTimelinePosition();
+  pumpScrub();
+  clearTimeout(state.scrubTimer);
+  // Keyboard changes have no pointer release. Let a burst settle before inspection.
+  if (!state.scrubDragging) state.scrubTimer = setTimeout(finishScrub, 180);
+}
+
+function pumpScrub() {
+  if (!state.scrubbing || video.seeking || state.pendingFrame === null) return;
+  if (!state.hasVideo) { setFrame(state.pendingFrame); return; }
+  if (state.scrubRequest === state.pendingFrame) return;
+  state.scrubRequest = state.pendingFrame;
+  const time = state.scrubRequest / FPS;
+  if (typeof video.fastSeek === 'function') video.fastSeek(time);
+  else video.currentTime = time;
+}
+
+function finishScrub() {
+  state.scrubDragging = false;
+  if (!state.scrubbing) return;
+  const frame = state.pendingFrame;
+  void seekToFrame(frame);
 }
 
 function parseCsv(text, filename) {
@@ -291,10 +330,12 @@ async function loadReference() {
 function updateTimelinePosition() {
   const start = state.timelineStart, end = state.timelineEnd;
   const span = end - start;
-  const fraction = (state.frame - start) / Math.max(1, span - 1);
+  const position = state.scrubbing ? state.pendingFrame ?? state.frame : state.frame;
+  const fraction = (position - start) / Math.max(1, span - 1);
   $('seek').min = String(start);
   $('seek').max = String(end - 1);
-  $('seek').value = String(state.frame);
+  // Keep the thumb at the requested position while its image is decoding.
+  $('seek').value = String(state.pendingFrame ?? state.frame);
   $('timeline-playhead').hidden = fraction < 0 || fraction > 1;
   $('timeline-playhead').style.left = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
   $('seek-progress').style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
@@ -462,13 +503,22 @@ video.addEventListener('error', () => {
   setMessage('Video could not play. Choose a browser-compatible video file.', true);
 });
 video.addEventListener('timeupdate', updateFromVideo);
-video.addEventListener('seeked', () => { updateFromVideo(); scheduleReverseWarm(); });
+video.addEventListener('seeked', () => {
+  if (state.scrubbing) {
+    // Native seek completion makes a new preview visible even without rVFC.
+    setFrame(Math.round(video.currentTime * FPS));
+    pumpScrub();
+    return;
+  }
+  updateFromVideo();
+  scheduleReverseWarm();
+});
 video.addEventListener('play', updatePlaybackControls);
 video.addEventListener('pause', () => { updatePlaybackControls(); scheduleReverseWarm(); });
 video.addEventListener('ended', updatePlaybackControls);
 if (video.requestVideoFrameCallback) {
   const onVideoFrame = (_, metadata) => {
-    if (state.hasVideo && !state.cacheVisible && state.pendingFrame === null && !video.seeking) {
+    if (state.hasVideo && !state.cacheVisible && (state.pendingFrame === null || state.scrubbing) && !video.seeking) {
       setFrame(Math.round(metadata.mediaTime * FPS));
     }
     video.requestVideoFrameCallback(onVideoFrame);
@@ -542,8 +592,8 @@ function scheduleReverseWarm() {
 
 function showCachedFrame(frame, entry) {
   const canvas = $('reverse-frame');
-  const width = entry.bitmap.videoWidth || entry.bitmap.width;
-  const height = entry.bitmap.videoHeight || entry.bitmap.height;
+  const width = entry.bitmap.videoWidth || entry.bitmap.displayWidth || entry.bitmap.width;
+  const height = entry.bitmap.videoHeight || entry.bitmap.displayHeight || entry.bitmap.height;
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width; canvas.height = height;
   }
@@ -555,6 +605,9 @@ function showCachedFrame(frame, entry) {
 }
 
 function pausePlayback() {
+  clearTimeout(state.scrubTimer);
+  state.scrubbing = false;
+  state.scrubRequest = null;
   state.cancelNativeSeek?.();
   ++state.playVersion;
   state.pendingFrame = null;
@@ -571,26 +624,38 @@ function pausePlayback() {
 }
 
 function syncNativeFrame(frame, version) {
-  if (!video.seeking && Math.abs(video.currentTime - frame / FPS) < 0.00001) return Promise.resolve(true);
+  state.cancelNativeSeek?.();
+  const target = frame / FPS;
+  const atTarget = () => Math.abs(video.currentTime - target) < 0.00001;
+  if (!video.seeking && atTarget()) return Promise.resolve(true);
   return new Promise(resolve => {
     let done = false;
     const finish = success => {
       if (done) return;
       done = true;
+      clearTimeout(timeout);
       video.removeEventListener('seeked', onSeek);
       video.removeEventListener('emptied', onAbort);
       video.removeEventListener('error', onAbort);
-      state.cancelNativeSeek = null;
+      if (state.cancelNativeSeek === onAbort) state.cancelNativeSeek = null;
       resolve(success && version === state.playVersion && state.hasVideo);
     };
-    const onSeek = () => finish(true);
+    const onSeek = () => { if (!video.seeking && atTarget()) finish(true); };
     const onAbort = () => finish(false);
+    // A failed native seek must not leave the play button stuck in "starting".
+    const timeout = setTimeout(() => finish(false), 10000);
     state.cancelNativeSeek = onAbort;
     video.addEventListener('seeked', onSeek);
     video.addEventListener('emptied', onAbort);
     video.addEventListener('error', onAbort);
-    video.currentTime = frame / FPS;
-    if (!video.seeking) onSeek();
+    try {
+      // Reuse an in-flight seek to this position. Reassigning currentTime can
+      // restart decoding when Play is pressed immediately after scrubbing.
+      if (!atTarget()) video.currentTime = target;
+      onSeek();
+    } catch {
+      finish(false);
+    }
   });
 }
 
@@ -630,16 +695,29 @@ async function startPlayback(direction = state.direction) {
     clearTimeout(state.warmTimer);
     state.reverseCache?.cancelWarm?.();
     if (needsHandoff) {
-      if (!await syncNativeFrame(startFrame, version)) return;
+      const synced = await syncNativeFrame(startFrame, version);
+      if (version !== state.playVersion) return;
+      if (!synced) {
+        state.starting = false;
+        updatePlaybackControls();
+        setMessage('Video could not seek. Try playing again.', true);
+        return;
+      }
       hideCachedFrame();
     }
     video.playbackRate = state.speed;
-    state.starting = false;
-    video.play().catch(error => {
+    try {
+      await video.play();
+    } catch (error) {
       if (version !== state.playVersion || error.name === 'AbortError') return;
       pausePlayback();
       setMessage('Browser could not start playback.', true);
-    });
+    } finally {
+      if (version === state.playVersion) {
+        state.starting = false;
+        updatePlaybackControls();
+      }
+    }
   } else if (startFrame > 0) {
     clearTimeout(state.warmTimer);
     state.reversing = true;
@@ -648,7 +726,7 @@ async function startPlayback(direction = state.direction) {
     reverseStatus();
     try {
       if (!cache) throw new Error('No decoded-frame cache available.');
-      await cache.warm(startFrame);
+      await cache.warm(startFrame, { prefetch: true });
       if (version !== state.playVersion || cache !== state.reverseCache) return;
       const first = cache.get(startFrame);
       if (!first) throw new Error('The requested frame could not be decoded.');
@@ -863,7 +941,11 @@ $('timeline-wrap').addEventListener('pointermove', event => {
     (predicted ? ` · Predicted ${LABELS[predicted].display}` : '') +
     (expected ? ` · Expected ${LABELS[expected].display}` : '');
 });
-$('seek').addEventListener('input', event => seekToFrame(event.target.value));
+$('seek').addEventListener('pointerdown', () => { state.scrubDragging = true; });
+$('seek').addEventListener('input', event => previewScrub(event.target.value));
+$('seek').addEventListener('change', finishScrub);
+$('seek').addEventListener('pointerup', finishScrub);
+$('seek').addEventListener('pointercancel', finishScrub);
 $('frame-input').addEventListener('change', event => seekToFrame(event.target.value));
 document.addEventListener('keydown', event => {
   if (['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(document.activeElement?.tagName)) return;

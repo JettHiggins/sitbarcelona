@@ -7,7 +7,11 @@ class ReverseFrameCache {
     this.chunks = new Set();
     this.targetChunk = null;
     this.worker = null;
+    this.waiters = new Set();
     this.warmVersion = 0;
+    this.decodeVersion = 0;
+    this.decoderRequests = new Map();
+    this.decoderSequence = 0;
     this.disposed = false;
     this.error = null;
     this.bytes = 0;
@@ -22,25 +26,65 @@ class ReverseFrameCache {
     if (typeof VideoDecoder === 'undefined' || typeof createImageBitmap === 'undefined') {
       throw new Error('This browser does not support decoded-frame playback.');
     }
-    const { Input, ALL_FORMATS, BlobSource, CanvasSink } = await import('./vendor/mediabunny/mediabunny.min.mjs');
+    let metadata;
+    if (typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+      try {
+        this.decoderWorker = new Worker(new URL('./reverse-decoder.js', document.baseURI), { type: 'module' });
+        this.decoderWorker.onmessage = ({ data }) => {
+          const request = this.decoderRequests.get(data.id);
+          if (data.entry) {
+            if (!request || this.disposed) data.entry.bitmap.close();
+            else {
+              try { request.onFrame(data.index, data.entry); }
+              catch (error) {
+                this.decoderRequests.delete(data.id);
+                request.reject(error);
+              }
+            }
+            return;
+          }
+          if (!request) return;
+          this.decoderRequests.delete(data.id);
+          if (data.error) request.reject(new Error(data.error));
+          else request.resolve(data.result);
+        };
+        this.decoderWorker.onerror = event => {
+          event.preventDefault();
+          this.stopDecoderWorker(new Error('Reverse decoding worker failed.'));
+        };
+        metadata = await this.requestDecoder('initialize', { file, fps: this.fps });
+      } catch {
+        this.stopDecoderWorker(new Error('Worker decoding unavailable.'));
+      }
+    }
     if (this.disposed) return;
-    this.input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
-    const track = await this.input.getPrimaryVideoTrack();
-    if (!track || !await track.canDecode()) throw new Error('This browser cannot decode this video into cached frames.');
-    if (this.disposed) return;
-    const sourceWidth = await track.getDisplayWidth();
-    const sourceHeight = await track.getDisplayHeight();
-    this.firstFrame = Math.max(0, Math.ceil(await track.getFirstTimestamp() * this.fps - 0.00001));
-    if (this.disposed) return;
-    // Preserve 1080p details; cap larger footage to keep a useful bounded window.
-    const scale = Math.min(1, 1920 / Math.max(sourceWidth, sourceHeight));
-    this.width = Math.max(1, Math.round(sourceWidth * scale));
-    this.height = Math.max(1, Math.round(sourceHeight * scale));
-    this.frameBytes = this.width * this.height * 4;
+    if (!metadata) {
+      const { ReverseDecoder } = await import('./reverse-decoder.js');
+      if (this.disposed) return;
+      this.decoder = new ReverseDecoder();
+      metadata = await this.decoder.initialize(file, this.fps);
+      if (this.disposed) { this.decoder.dispose(); return; }
+    }
+    Object.assign(this, metadata);
     this.capacity = Math.floor(this.budget / this.frameBytes);
     if (this.capacity < 3) throw new Error('Video frames exceed the reverse-cache budget.');
     this.chunkFrames = Math.max(1, Math.min(this.fps, Math.floor(this.capacity / 3)));
-    this.sink = new CanvasSink(track, { width: this.width, height: this.height, fit: 'fill', poolSize: 1 });
+  }
+
+  requestDecoder(type, data, onFrame) {
+    const id = ++this.decoderSequence;
+    return new Promise((resolve, reject) => {
+      this.decoderRequests.set(id, { resolve, reject, onFrame });
+      try { this.decoderWorker.postMessage({ id, type, ...data }); }
+      catch (error) { this.decoderRequests.delete(id); reject(error); }
+    });
+  }
+
+  stopDecoderWorker(error) {
+    this.decoderWorker?.terminate();
+    this.decoderWorker = null;
+    for (const request of this.decoderRequests.values()) request.reject(error);
+    this.decoderRequests.clear();
   }
 
   wanted(chunk) {
@@ -49,9 +93,17 @@ class ReverseFrameCache {
 
   get(frame) { return this.frames.get(frame); }
 
+  notifyProgress() {
+    for (const resolve of this.waiters) resolve();
+    this.waiters.clear();
+  }
+
   cancelWarm() {
     ++this.warmVersion;
+    ++this.decodeVersion;
+    this.decoderWorker?.postMessage({ type: 'cancel' });
     this.targetChunk = null;
+    this.notifyProgress();
   }
 
   trim() {
@@ -59,13 +111,13 @@ class ReverseFrameCache {
       if (!this.wanted(Math.floor(frame / this.chunkFrames))) {
         entry.bitmap.close();
         this.frames.delete(frame);
-        this.bytes -= this.frameBytes;
+        this.bytes -= entry.bytes;
       }
     }
     for (const chunk of this.chunks) if (!this.wanted(chunk)) this.chunks.delete(chunk);
   }
 
-  async warm(frame) {
+  async warm(frame, { prefetch = false } = {}) {
     const version = ++this.warmVersion;
     try {
       await this.ready;
@@ -74,7 +126,16 @@ class ReverseFrameCache {
       this.targetChunk = Math.floor(Math.max(0, frame) / this.chunkFrames);
       this.trim();
       const target = this.targetChunk;
-      do { await this.work(); } while (!this.disposed && version === this.warmVersion && target === this.targetChunk && !this.chunks.has(target));
+      const required = (prefetch ? [target, target - 1, target - 2] : [target]).filter(chunk => chunk >= 0);
+      // Return as soon as the requested chunk is ready. Earlier reverse chunks
+      // continue in the background instead of delaying the displayed image.
+      while (!this.disposed && version === this.warmVersion && !required.every(chunk => this.chunks.has(chunk))) {
+        const progress = new Promise(resolve => this.waiters.add(resolve));
+        this.work().catch(() => {});
+        await progress;
+        if (this.error) throw this.error;
+      }
+      if (!this.disposed && version === this.warmVersion) this.work().catch(() => {});
       if (!this.disposed && this.error) throw this.error;
     } catch (error) {
       if (!this.disposed) { this.error = error; throw error; }
@@ -89,40 +150,54 @@ class ReverseFrameCache {
           .find(value => value >= 0 && !this.chunks.has(value));
         if (chunk === undefined) return;
         await this.decode(chunk);
+        this.notifyProgress();
       }
-    })().finally(() => { this.worker = null; });
+    })().catch(error => {
+      if (!this.disposed) this.error = error;
+      throw error;
+    }).finally(() => { this.worker = null; this.notifyProgress(); });
     return this.worker;
   }
 
   async decode(chunk) {
+    const version = this.decodeVersion;
     const start = chunk * this.chunkFrames;
     const times = Array.from({ length: this.chunkFrames }, (_, i) => (start + i + 0.001) / this.fps);
-    let i = 0;
     this.chunkDecodes++;
-    // A single pooled canvas is copied into independent bitmaps before it is reused.
-    for await (const sample of this.sink.canvasesAtTimestamps(times)) {
-      if (this.disposed || !this.wanted(chunk)) break;
-      const frame = start + i++;
-      if (!sample) continue;
-      const bitmap = await createImageBitmap(sample.canvas);
-      if (this.disposed || !this.wanted(chunk)) { bitmap.close(); break; }
+    const store = (index, entry) => {
+      if (this.disposed || version !== this.decodeVersion || !this.wanted(chunk)) { entry.bitmap.close(); return; }
+      const frame = start + index;
       const previous = this.frames.get(frame);
-      if (previous) { previous.bitmap.close(); this.bytes -= this.frameBytes; }
-      this.frames.set(frame, { bitmap, timestamp: sample.timestamp });
-      this.bytes += this.frameBytes;
+      if (previous) { previous.bitmap.close(); this.bytes -= previous.bytes; }
+      if (this.bytes + entry.bytes > this.budget) {
+        entry.bitmap.close();
+        throw new Error('Reverse cache exceeded its frame budget.');
+      }
+      this.frames.set(frame, entry);
+      this.bytes += entry.bytes;
       this.decodedFrames++;
-      if (this.bytes > this.budget) throw new Error('Reverse cache exceeded its frame budget.');
+    };
+    if (this.decoderWorker) {
+      await this.requestDecoder('decode', { times }, store);
+    } else {
+      let index = 0;
+      for await (const entry of this.decoder.decode(times, () => this.disposed || version !== this.decodeVersion || !this.wanted(chunk))) {
+        if (entry) store(index, entry);
+        ++index;
+      }
     }
-    if (!this.disposed && this.wanted(chunk)) this.chunks.add(chunk);
+    if (this.bytes > this.budget) throw new Error('Reverse cache exceeded its frame budget.');
+    if (!this.disposed && version === this.decodeVersion && this.wanted(chunk)) this.chunks.add(chunk);
   }
 
   dispose() {
     this.disposed = true;
-    this.targetChunk = null;
+    this.cancelWarm();
     for (const entry of this.frames.values()) entry.bitmap.close();
     this.frames.clear();
     this.chunks.clear();
     this.bytes = 0;
-    this.input?.dispose();
+    this.stopDecoderWorker(new Error('Reverse cache disposed.'));
+    this.decoder?.dispose();
   }
 }

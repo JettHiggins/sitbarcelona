@@ -77,7 +77,7 @@ async page => {
   await page.evaluate(async () => {
     await state.reverseCache.warm(10);
   });
-  check(await page.evaluate(() => !state.reverseCache.get(100) && window.cacheProbe.initialBitmap.width === 0), 'Distant windows evict and close old bitmaps');
+  check(await page.evaluate(() => !state.reverseCache.get(100) && (window.cacheProbe.initialBitmap.width ?? window.cacheProbe.initialBitmap.displayWidth) === 0), 'Distant windows evict and close old bitmaps');
   const previousCache = await page.evaluateHandle(() => state.reverseCache);
   await page.locator('#video-file').setInputFiles([]);
   await page.locator('#video-file').setInputFiles(fixture);
