@@ -20,7 +20,8 @@ from ..mall.layer5_sequence_decoder.decoder import decode
 from .segmentation import predict
 
 GAMES = ('bench1', 'bench2', 'bench3')
-VARIANTS = ('viterbi', 'snapped', 'rules', 'durations', 'revisable', 'candidates')
+VARIANTS = ('viterbi', 'snapped', 'rules', 'durations', 'revisable', 'candidates',
+            'joint-d', 'joint-team', 'joint')
 
 
 def source_revision():
@@ -105,6 +106,8 @@ def main():
             row[name]['changed_dead_frames'] = diagnostics['changed_dead_frames']
             row[name]['reopened_spans'] = sum(d['reopened'] for d in diagnostics['dead_revisions'])
             row[name]['new_candidate_rows'] = len(diagnostics['change_candidates'])
+            row[name]['joint_windows'] = len(diagnostics.get('windows', []))
+            row[name]['joint_changed_frames'] = diagnostics.get('changed_frames', 0)
         report['games'][tag] = row
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2) + '\n')

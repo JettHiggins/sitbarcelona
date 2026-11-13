@@ -17,3 +17,11 @@ RECOVERY_BLEND = 0.25
 CONTACT_CHANGE_PRIOR = 0.25
 CONTACT_BONUS_WEIGHT = 1.0
 STRONG_CP_PROBABILITY = 0.7
+
+# Local three-state decoder experiment. These select windows from model
+# disagreement only; benchmark labels never select match windows.
+JOINT_OWNER_AVG_FRAMES = 25
+JOINT_OWNER_CONFLICT = 0.2
+JOINT_MIN_TRIGGER_FRAMES = 8
+JOINT_CONTEXT_FRAMES = 25
+JOINT_BOUNDARY_GRID = 5

@@ -144,6 +144,9 @@ def change_candidates(z, F, L2, dead, L4):
 
 def predict(z, F, L2, L3, L4, variant='revisable'):
     """Run an isolated ablation; return labels and local diagnostics."""
+    if variant in ('joint-d', 'joint-team', 'joint'):
+        from .joint import predict_joint
+        return predict_joint(z, F, L2, L3, L4, variant)
     if variant in ('viterbi', 'snapped', 'rules', 'durations', 'final'):
         dead = stage_dead(z, L3, variant)
         decisions = []

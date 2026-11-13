@@ -123,7 +123,7 @@ ownership/sequence-score problem, not just missing candidate timestamps.
 The diagnostic uses the key for analysis on other games only; it does not
 modify model predictions or use BAR–ATH public labels.
 
-**Next controlled experiment:** compare a local three-state `D/H/A` decoder
+**Planned next experiment at this stage:** compare a local three-state `D/H/A` decoder
 with Mall and both Wes modes. In uncertain windows, jointly score dead/live
 and team evidence, event-anchored transitions, and state durations, so a
 reopened D span pays for the entire resulting possession pattern. Keep clear
@@ -134,6 +134,48 @@ promotion gate. Report changes in all three missed-spell symptom groups,
 short-spell recall, spurious transitions, boundary timing, `spellF1` and
 `macroF1`. Wrong-team-majority spells may require better upstream ownership
 evidence even if decoding improves.
+
+## Constrained joint decoder, 2026-11-13
+
+Hypothesis: scoring `D/H/A` segments together in uncertain windows could
+reopen genuine play without creating the extra unsupported possession islands
+seen in `revisable`. `pipeline/wes/joint.py` adds a sparse-boundary local
+semi-Markov decoder. Windows come from a disagreement between Mall D and its
+raw Viterbi/control evidence, or a sustained disagreement between the decoded
+team and smoothed owner evidence. No benchmark or BAR–ATH labels select windows.
+Outside them, Mall is frozen. Dead/live emissions use existing Layer 3 log odds;
+conditional H/A emissions use the existing Layer 5 owner evidence, normalized
+so owner confidence alone does not make a dead frame live. Transition costs,
+event bonuses and the soft live-duration prior come from Mall. This first trial
+did **not** fit new evidence scales. The three ablations isolate D, H/A, or both.
+No video or TCN is involved. Input provenance and held-out training are the
+same as the initial experiment. Python source SHA-256:
+`2f24d62ec1f51d5b4fb9f31521973c9bceaf86e270628ae4d568f50c0daea116`.
+
+| Variant | Game 1 `spellF1` | Game 2 | Game 3 | Mean `spellF1` | Mean change vs Mall | Mean `macroF1` | Outcome |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Mall baseline | .6902 | .6961 | .6616 | .6826 | — | .9011 | Selected |
+| `joint-d` | .6888 | .6986 | .6625 | .6833 | +.0007 | .9029 | Failed +.02 gate; diagnostic only |
+| `joint-team` | .6888 | .6967 | .6503 | .6786 | −.0040 | .9006 | Rejected: Game 3 and short-spell regressions |
+| `joint` | .6858 | .6952 | .6513 | .6774 | −.0052 | .9022 | Rejected: combined changes compound boundary errors |
+
+`joint-d` reduced benchmark false-D frames from 28,414 to 27,249 and
+D-majority missed spells from 153 to 146. It still increased mostly-right-but-
+unmatched spells from 120 to 124 and mostly-wrong-team spells from 176 to 178;
+total missed spells fell only 453 → 451 at IoU .5. Its small mean gain is far
+below the project gate and below the official full-match score noise band.
+`joint-team` left the D mask fixed and increased missed spells to 458;
+`joint` increased them to 460. The local objective can alter H/A boundaries,
+but the upstream owner evidence is wrong or weak on many short spells, and
+window seams plus the weak duration prior can create poor interval matches.
+These are measured associations, not proof of one exact cause for each miss.
+
+All three full BAR–ATH CSVs passed the 199,319-row format check. Their graded-
+frame disagreements with Mall are .58%, .11%, and .76%, respectively; private
+full-match accuracy is unknown. Keep Mall selected. Avoid tuning this decoder
+against BAR–ATH's public five minutes or repeatedly searching constants on the
+same three development games. The next meaningful improvement needs stronger
+ownership/control evidence or an additional compatible other-game benchmark.
 
 ## Next entries
 

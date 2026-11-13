@@ -20,6 +20,9 @@ git branch --show-current                              # wes_deadball+video
 pipeline/.venv/bin/python -m pipeline.run mall --mode model
 pipeline/.venv/bin/python -m pipeline.run wes --mode revisable --reuse-cache
 pipeline/.venv/bin/python -m pipeline.run wes --mode candidates --reuse-cache
+pipeline/.venv/bin/python -m pipeline.run wes --mode joint-d --reuse-cache
+pipeline/.venv/bin/python -m pipeline.run wes --mode joint-team --reuse-cache
+pipeline/.venv/bin/python -m pipeline.run wes --mode joint --reuse-cache
 pipeline/.venv/bin/python -m pipeline.compare \
   possession-viewer/data/mall-model.csv possession-viewer/data/wes-candidates.csv
 ```
@@ -30,6 +33,17 @@ Mall writes `possession-viewer/data/mall-model.csv`. Wes writes separate
 disagreement; it is not a ground-truth score. `wes --mode candidates` is an
 experiment that **failed** the current held-out promotion gate, so do not treat its
 CSV as the chosen submission.
+
+The joint experiments write separate `wes-joint-d.csv`, `wes-joint-team.csv`,
+and `wes-joint.csv` outputs. Their local semi-Markov decoder scores D/H/A
+segments together only in windows selected from tracking/model disagreement.
+`joint-d` permits D revision while keeping existing live team labels fixed;
+`joint-team` permits H/A revision while keeping D fixed; `joint` permits both.
+Outside selected windows, Mall's labels are unchanged. Hard kickoff, ungraded,
+and clearly outside-ball frames remain protected. The existing ownership score
+chooses H versus A but cannot independently turn D into live. The first joint
+trial uses existing score scales rather than fitting new calibration parameters.
+None of these three modes passes the current held-out promotion gate.
 
 Omit `--reuse-cache` on a Wes run to rebuild the shared Mall match stages and
 refresh the baseline CSV first. Use `--reuse-cache` after changing only files in
@@ -53,6 +67,7 @@ hypothesis, never an automatic turnover.
 
 ```bash
 pipeline/.venv/bin/python -m unittest pipeline.wes.test_segmentation
+pipeline/.venv/bin/python -m unittest pipeline.wes.test_joint
 pipeline/.venv/bin/python -m pipeline.wes.evaluate
 pipeline/.venv/bin/python -m pipeline.wes.diagnose
 ```
@@ -77,8 +92,9 @@ not causal proof or a score improvement by themselves.
 The project promotion gate requires mean held-out `spellF1` at least +0.02,
 improvement in at least two of three games, no per-game loss worse than −0.02,
 and a reproducible valid 199,319-row output. This is a project rule, not a
-competition threshold. The present Wes revisable and candidate modes scored
-slightly below Mall on all three games, so Mall remains the selected version.
+competition threshold. The revisable and candidate modes scored slightly below
+Mall on all three games. `joint-d` had a negligible mean gain and the other
+joint modes regressed, so Mall remains the selected version.
 
 ## Inspect in the viewer
 

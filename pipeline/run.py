@@ -118,7 +118,8 @@ def main():
                            help='Interaction mode only: reuse existing Mall tracking/model caches')
     p = subs.add_parser('wes', help='Separate possession segmentation experiments using Mall evidence')
     p.add_argument('--mode', choices=['viterbi', 'snapped', 'rules', 'durations',
-                                      'revisable', 'candidates'], required=True)
+                                      'revisable', 'candidates', 'joint-d',
+                                      'joint-team', 'joint'], required=True)
     p.add_argument('--output', type=Path)
     p.add_argument('--data-dir', type=Path, help='Data bundle root or tactical folder')
     p.add_argument('--reuse-cache', action='store_true',
