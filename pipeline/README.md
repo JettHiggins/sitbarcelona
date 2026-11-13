@@ -5,6 +5,13 @@ repository root. Generated CSVs and caches stay local; viewer code is unchanged.
 
 ## Install and run
 
+For the portable teammate setup, run `python dev.py setup` from the repository
+root. It creates the environment, installs CPU PyTorch and the dependencies, and
+runs the data-free unit tests. `python dev.py prepare` prepares the public training
+games; `python dev.py model --data-dir PATH` runs Mall against your challenge
+bundle. See the [root quick start](../README.md) for the complete workflow.
+The manual commands below remain available.
+
 ```bash
 python3 -m venv pipeline/.venv
 source pipeline/.venv/bin/activate
