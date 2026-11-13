@@ -13,6 +13,7 @@ import warnings
 
 import numpy as np
 
+from .. import config as C
 from ..common import ROOT, cache_path, load_layer
 from .deadball import detect
 
@@ -24,7 +25,15 @@ def build(verbose=True):
     z = load_layer("layer0")
     F = load_layer("layer1")
     L2 = load_layer("layer2")
-    dead, llr, parts = detect(z, F, L2)
+    p_learned = None
+    if C.DEAD_W_LEARNED:
+        from .learned import p_dead
+        p_learned = p_dead()
+    if p_learned is None:                 # no bench to learn from: the rules' own speed cue
+        C.DEAD_W_SPEED = C.DEAD_W_SPEED_RULES_ONLY
+    dead, llr, parts = detect(z, F, L2, p_learned)
+    if p_learned is not None:
+        parts["p_learned"] = p_learned
     g = z["half"] > 0
     if verbose:
         print("dead on {:.1%} of graded frames  ({:.0f}s)".format(dead[g].mean(), time.time() - t0))

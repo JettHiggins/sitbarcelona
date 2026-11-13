@@ -23,7 +23,7 @@ import warnings
 
 import numpy as np
 
-from ..common import CACHE, ROOT, TAG, cache_path, load_layer
+from ..common import CACHE, ROOT, TAG, cache_path, load_layer, train_tags
 from . import crossgame as X
 from .model import PARAMS, design, labels, out_of_fold
 
@@ -59,31 +59,91 @@ def full_matrix(tag):
 def cross_game(verbose=True):
     """p_home_full, cp_frames, cp_p for the current game from models trained on the others."""
     t0 = time.time()
-    train = [t for t in bench_tags() if t != TAG]
+    from .. import config as C
+    train = train_tags(TAG, C.POSS_TRAIN_PREFIXES)
     if not train:
         raise IOError("no bench games: run python -m pipeline.mall.bench.build (see bench/README.md)")
     key = "+".join(train)
-    mats = {t: full_matrix(t) for t in train + [TAG]}
-    names = mats[TAG][1]
+    M, names = full_matrix(TAG)
     ys = {t: truth(t) for t in train}
-    frame = X.cached(os.path.join(MODELS, "frame_{}.pkl".format(key)), lambda: X.fit(
-        [mats[t][0] for t in train], [np.where(ys[t] == 0, 1, np.where(ys[t] == 1, 0, -1)) for t in train],
-        names))
-    p_full = X.predict(frame[0], frame[1], mats[TAG][0]).astype(np.float32)
+    stride = max(3, len(train))                 # more games, same number of rows
 
-    def cp_data(t):
+    def cp_data(t, mat):
         half = load_layer("layer0", t)["half"]
-        fr = X.cp_candidates(load_layer("layer3", t)["dead"], half)
-        Xc, cn = X.cp_design(mats[t][0], names, load_layer("layer2", t), fr)
+        # training games: candidates on truly live frames, so the cached model does not depend
+        # on the dead-ball layer's output for those games
+        dead = (ys[t] == 2) if t in ys else load_layer("layer3", t)["dead"]
+        fr = X.cp_candidates(dead, half)
+        Xc, cn = X.cp_design(mat, names, load_layer("layer2", t), fr, load_layer("layer1", t))
         return fr, Xc, cn
-    cp_train = {t: cp_data(t) for t in train}
-    fr, Xc, cn = cp_data(TAG)
-    cp = X.cached(os.path.join(MODELS, "cp_{}.pkl".format(key)), lambda: X.fit_cp(
-        [cp_train[t][1] for t in train], [X.cp_labels(ys[t], cp_train[t][0]) for t in train], cn))
+
+    def fit_frame():
+        Xs, yy = [], []
+        for t in train:                         # one game's matrix in memory at a time
+            mat = full_matrix(t)[0]
+            y = np.where(ys[t] == 0, 1, np.where(ys[t] == 1, 0, -1))
+            keep = np.flatnonzero(y >= 0)[::stride]
+            Xs.append(mat[keep])
+            yy.append(y[keep])
+            del mat
+        return X.fit(Xs, yy, names, stride=1)
+
+    def fit_cp():
+        Xs, yy, cn = [], [], None
+        for t in train:
+            fr_t, Xc_t, cn = cp_data(t, full_matrix(t)[0])
+            Xs.append(Xc_t)
+            yy.append(X.cp_labels(ys[t], fr_t))
+        return X.fit_cp(Xs, yy, cn, max_iter=C.CP_MAX_ITER)
+
+    frame = X.cached(os.path.join(MODELS, "frame_{}.pkl".format(key)), fit_frame)
+    p_full = X.predict(frame[0], frame[1], M).astype(np.float32)
+    fr, Xc, cn = cp_data(TAG, M)
+    cp = X.cached(os.path.join(MODELS, "cpf_{}.pkl".format(key)), fit_cp)
     cp_p = X.predict_cp(cp[0], cp[1], Xc).astype(np.float32)
     if verbose:
         print("cross-game models trained on {}  ({:.0f}s)".format(key, time.time() - t0))
     return {"p_home_full": p_full, "cp_frames": fr.astype(np.int32), "cp_p": cp_p}
+
+def sequence_features(tag):
+    """sequence.features of one game, cached (derived data; gitignored)."""
+    from . import sequence as Q
+    from ..common import cache_path
+    path = os.path.join(MODELS, "seq_feat_{}.npy".format(tag))
+    if os.path.isfile(path) and os.path.getmtime(path) >= os.path.getmtime(cache_path("layer0", tag)):
+        return np.load(path)
+    f = Q.features(load_layer("layer0", tag))
+    os.makedirs(MODELS, exist_ok=True)
+    np.save(path, f)
+    return f
+
+
+def sequence_game(verbose=True):
+    """p_home_full, cp_frames, cp_p for the current game from the trajectory model
+    (sequence.py), trained on the other games: the same outputs as cross_game()."""
+    import torch
+    from . import sequence as Q
+    from .. import config as C
+    t0 = time.time()
+    train = train_tags(TAG, C.POSS_TRAIN_PREFIXES)
+    if not train:
+        raise IOError("no bench games: run python -m pipeline.mall.bench.build (see bench/README.md)")
+    key = "+".join(train)
+    path = os.path.join(MODELS, "seq_{}.pt".format(key))
+    if os.path.isfile(path):
+        state = torch.load(path, map_location="cpu", weights_only=True)
+    else:
+        games = [(sequence_features(t), truth(t), load_layer("layer0", t)["half"]) for t in train]
+        state = Q.train(games, seed=C.SEQ_MODEL_SEED)
+        torch.save(state, path)
+    half = load_layer("layer0")["half"]
+    p_home, p_change = Q.predict(state, sequence_features(TAG), half)
+    fr = X.cp_candidates(load_layer("layer3")["dead"], half)
+    if verbose:
+        print("trajectory model trained on {}  ({:.0f}s)".format(key, time.time() - t0))
+    return {"p_home_full": p_home, "cp_frames": fr.astype(np.int32),
+            "cp_p": p_change[fr].astype(np.float32)}
+
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -97,13 +157,20 @@ def build(verbose=True, with_passes=True, params=None):
     y, seg = labels(z, F, L2, L3, with_passes=with_passes)
     params = params or PARAMS
     out = {"label": y, "label_segment": seg}
-    p = {}
-    for view in ("players", "players_context", "full"):
-        X, _ = design(F, view)
-        p[view] = out_of_fold(X, y, z["half"], params)
-    out["p_home_players"] = 0.5 * p["players"] + 0.5 * p["players_context"]
-    out["p_home_full_self"] = p["full"]
-    out.update(cross_game(verbose))
+    from .. import config as C
+    if C.SEQ_W_PLAYERS:
+        p = {}
+        for view in ("players", "players_context", "full"):
+            X, _ = design(F, view)
+            p[view] = out_of_fold(X, y, z["half"], params)
+        out["p_home_players"] = 0.5 * p["players"] + 0.5 * p["players_context"]
+        out["p_home_full_self"] = p["full"]
+    else:
+        # The decoder gives the self-trained views no weight (SEQ_W_PLAYERS = 0, chosen on the
+        # bench), so they are not trained: neutral evidence, identical decoded output.
+        out["p_home_players"] = np.full(len(y), 0.5, np.float32)
+        out["p_home_full_self"] = np.full(len(y), 0.5, np.float32)
+    out.update(sequence_game(verbose) if C.POSS_MODEL == "sequence" else cross_game(verbose))
     if verbose:
         print("labels: {} frames ({:.0%} home)  ({:.0f}s)".format(
             int((y >= 0).sum()), float(np.mean(y[y >= 0] == 1)), time.time() - t0))

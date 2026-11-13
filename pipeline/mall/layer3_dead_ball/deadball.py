@@ -250,9 +250,20 @@ def kickoff_breaks(state, half, kickoff_shape, max_ahead=500):
     return state
 
 
-def detect(z, F, L2):
+def detect(z, F, L2, p_learned=None):
     half = z["half"]
     llr, parts = evidence(z, F, L2)
+    if p_learned is not None and C.DEAD_W_LEARNED:
+        p = np.clip(p_learned.astype(float), 1e-6, 1 - 1e-6)
+        parts["learned"] = C.DEAD_W_LEARNED * np.clip(np.log(p / (1 - p)), -C.DEAD_LEARNED_CLIP,
+                                                      C.DEAD_LEARNED_CLIP)
+        if C.DEAD_GAP_GATE:
+            # A lost ball means a stoppage only as far as the players look stopped: the gap cue
+            # counts in full from P(dead | players) = DEAD_GAP_GATE up, and fades to nothing as
+            # that falls to 0. A long loss in open play then no longer reads as a stoppage.
+            parts["gap"] = parts["gap"] * np.minimum(1.0, p / C.DEAD_GAP_GATE)
+            llr = sum(v for k, v in parts.items() if k != "learned")
+        llr = C.DEAD_W_RULES * llr + parts["learned"]
     state = viterbi2(llr, half, C.DEAD_SWITCH_COST)
     state = snap(state, half, restart_moments(z, F, parts["kickoff_shape"]), stop_moments(z, F),
                  C.DEAD_SNAP_WINDOW)

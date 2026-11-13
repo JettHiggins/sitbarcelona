@@ -248,11 +248,91 @@ def cp_candidates(dead, half):
     return np.flatnonzero(alive & (np.arange(len(half)) % CP_STEP == 0))
 
 
-def cp_design(Xfull, names, L2, frames):
+# A hand-over takes a few frames. The full view above averages over a second or more either
+# side, which says that possession changed around here but not when, and blurs a brief win of
+# the ball into its surroundings. These look at the quarter- and half-second before and after.
+FINE_WINDOWS = ((-25, -12), (-12, 0), (-6, 0), (0, 6), (0, 12), (12, 25))
+FINE_KEYS = ["d_h", "d_a", "relv_h", "relv_a", "closing_h", "closing_a", "margin", "ball_speed",
+             "ctrl_h", "ctrl_a", "ball_fwd_speed_home", "dwell_h", "dwell_a"]
+NEAR_WINDOWS = ((-25, -12), (-12, 0), (0, 12), (12, 25), (25, 50))
+EVENT_WINDOWS = ((-6, -1), (-1, 2), (2, 7), (7, 13))
+
+
+def window_min(x, lo, hi, missing=99.0):
+    """Smallest known x over [t+lo, t+hi); `missing` where none is known."""
+    x = np.where(np.isnan(x), missing, np.asarray(x, float))
+    n = len(x)
+    out = np.full(n, missing)
+    for s in range(lo, hi):
+        sh = np.full(n, missing)
+        if s >= 0:
+            sh[:n - s] = x[s:]
+        else:
+            sh[-s:] = x[:s]
+        out = np.minimum(out, sh)
+    return out
+
+
+def fine_features(F, L2, frames):
+    """Short-window view of the ball and the nearest players at each candidate frame."""
+    from ..layer2_touches.touches import KICK, RECEIVE, RELEASE, TOUCH
+    S = ball_signals(F, L2)
+    cols, names = [], []
+
+    def add(name, x):
+        cols.append(np.asarray(x, float))
+        names.append(name)
+
+    for k in FINE_KEYS:
+        stem, team = (k[:-2], k[-2:]) if k.endswith(("_h", "_a")) else (k, "")
+        for lo, hi in FINE_WINDOWS:
+            add("{}_fw{}_{}{}".format(stem, lo, hi, team).replace("-", "m"),
+                window_mean(S[k], lo, hi)[frames])
+    speed = F["ball_speed"].astype(float)
+    for w in (6, 12):                          # the ball speeding up or slowing down right here
+        add("ball_dspeed{}".format(w), (window_mean(speed, 0, w) - window_mean(speed, -w, 0))[frames])
+    add("ball_turn_now", window_mean(L2["turn"].astype(float), -3, 4)[frames])
+    for tag in ("h", "a"):                     # how close each team got, not its average
+        d = F["d_" + tag].astype(float)
+        for lo, hi in NEAR_WINDOWS:
+            add("dmin_fw{}_{}_{}".format(lo, hi, tag).replace("-", "m"), window_min(d, lo, hi)[frames])
+    E = L2["events"]
+    n = len(speed)
+    for kind, nm in ((RECEIVE, "rec"), (TOUCH, "touch"), (KICK, "kick"), (RELEASE, "rel")):
+        for t, tag in ((0, "_h"), (1, "_a")):
+            x = np.zeros(n)
+            x[E["frame"][(E["kind"] == kind) & (E["team"] == t)]] = 1
+            for lo, hi in EVENT_WINDOWS:
+                add("evf_{}_{}_{}{}".format(nm, lo, hi, tag).replace("-", "m"),
+                    window_mean(x, lo, hi)[frames])
+    for t, tag in ((0, "_h"), (1, "_a")):      # the reception that starts here, if one does
+        m = (E["kind"] == RECEIVE) & (E["team"] == t)
+        fr, dur = E["frame"][m], E["duration"][m].astype(float)
+        contest = np.nan_to_num(E["contest"][m].astype(float))
+        if len(fr):
+            j = np.minimum(np.searchsorted(fr, frames - 6), len(fr) - 1)
+            gap = np.where(fr[j] >= frames - 6, fr[j] - frames, 999)
+        else:
+            j, gap = np.zeros(len(frames), int), np.full(len(frames), 999)
+            dur = contest = np.zeros(1)
+        near = gap <= 12
+        add("nextrec_dur" + tag, np.where(near, dur[j], 0))
+        add("nextrec_contest" + tag, np.where(near, contest[j], 0))
+        add("nextrec_in" + tag, np.minimum(gap, 250))
+    return np.column_stack(cols).astype(np.float32), names
+
+
+def cp_design(Xfull, names, L2, frames, F=None):
+    """Candidate rows: the full view, event counts, and (given layer 1) the short-window view."""
     ef = event_features(L2, len(Xfull))
     keys = list(ef)
-    X = np.column_stack([Xfull[frames]] + [np.column_stack([ef[k][frames] for k in keys])])
-    return X.astype(np.float32), names + keys
+    parts = [Xfull[frames], np.column_stack([ef[k][frames] for k in keys])]
+    names = list(names) + keys
+    if F is not None:
+        A, fine_names = fine_features(F, L2, frames)
+        parts.append(A)
+        names += fine_names
+    return np.column_stack(parts).astype(np.float32), names
 
 
 def cp_labels(truth, frames):
@@ -265,12 +345,13 @@ def cp_labels(truth, frames):
     return ch[frames]
 
 
-def fit_cp(Xs, ys, names, params=PARAMS):
+def fit_cp(Xs, ys, names, params=PARAMS, max_iter=None):
     idx, sgn = swap_index(names)
     X = np.vstack(Xs)
     y = np.concatenate(ys)
     ysw = np.where(y == 1, 2, np.where(y == 2, 1, 0))
-    clf = HistGradientBoostingClassifier(max_iter=params["max_iter"], learning_rate=params["lr"],
+    clf = HistGradientBoostingClassifier(max_iter=max_iter or params["max_iter"],
+                                         learning_rate=params["lr"],
                                          max_leaf_nodes=params["leaves"], min_samples_leaf=100,
                                          l2_regularization=1.0, random_state=0)
     clf.fit(np.vstack([X, X[:, idx] * sgn]), np.r_[y, ysw])

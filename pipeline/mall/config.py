@@ -85,7 +85,9 @@ DEAD_GAP_MID = 50
 DEAD_W_GAP_EDGE = 1.0             # ...and it was last seen at / beyond a line
 DEAD_EDGE_M = 2.0
 DEAD_SPEED_PIVOT = 1.6            # m/s mean player speed where the evidence is neutral
-DEAD_W_SPEED = 1.5                # per m/s below the pivot (3 s mean)
+DEAD_W_SPEED = 0.0                # per m/s below the pivot (3 s mean); the learned players
+                                  # evidence below replaces it (1.5 without that model)
+DEAD_W_SPEED_RULES_ONLY = 1.5
 DEAD_W_BALL_FAST = -1.0           # ball moving fast inside the pitch: play is on
 DEAD_BALL_FAST = 8.0              # m/s
 DEAD_W_CONTROL = -1.0             # a player controlling the ball away from the lines
@@ -101,6 +103,17 @@ DEAD_MIN_ALIVE_S = 2.0            # nor is play between two stoppages
 DEAD_SWITCH_COST = 8.0            # nats to switch alive <-> dead (suppresses flicker)
 DEAD_SNAP_WINDOW = 75             # frames each side to snap a boundary to a kick / line crossing
 
+# Learned evidence (layer3_dead_ball/learned.py): logit of P(dead | players) from a model trained
+# on other games, clipped to +/- DEAD_LEARNED_CLIP, added to the rule cues.
+# Chosen on the bench (ten other games, each scored by a model that never saw it; dead-ball F1
+# averaged over games): rules alone 0.924; + learned at weight 1.0 0.946; and with the rules'
+# own player-speed cue dropped and the gap gate on 0.947. Weights 0.5-2 and the gate on / off
+# all sit within 0.005 of each other there - the bench cannot rank them - so the top one is kept.
+DEAD_W_RULES = 1.0
+DEAD_W_LEARNED = 1.0
+DEAD_LEARNED_CLIP = 6.0
+DEAD_GAP_GATE = 0.5               # fade the lost-ball cue where the players look in play
+
 # --- layer 4: possession model ----------------------------------------------------------------
 # Certain possession = a player controlling the ball, uncontested, for at least this long.
 POSS_LABEL_MIN_CONTROL = 25       # frames (1 s)
@@ -108,6 +121,19 @@ POSS_LABEL_MAX_CONTEST = 0.25
 # Also label the ball travelling between two controls of the same team (a completed pass)
 # when the hand-over takes at most this long.
 POSS_LABEL_PASS_GAP = 75          # frames (3 s)
+# Which cross-game model supplies the frame evidence and the change points to the decoder:
+# "sequence" - a recurrent network over the raw trajectories (layer4/sequence.py; needs PyTorch),
+# "boosted"  - the gradient-boosted frame and change-point models (crossgame.py).
+POSS_MODEL = "sequence"
+SEQ_MODEL_SEED = 0
+# Bench games the cross-game models learn from, by tag prefix: the three Metrica games and
+# the seven DFL games (bench/). ["bench"] reproduces the earlier three-game training.
+POSS_TRAIN_PREFIXES = ["bench", "dfl"]
+# Change-point model: every candidate of every training game, short-window features
+# (crossgame.fine_features), this many boosting rounds. On two held-out games (trained on the
+# eight others) average precision for "possession changes here" went 0.52 -> 0.65 (Metrica 1)
+# and 0.48 -> 0.54 (DFL 1) against the 300-round model without the short windows.
+CP_MAX_ITER = 600
 POSS_FOLDS = 10                   # contiguous time blocks for out-of-fold training
 POSS_BUFFER = 250                 # frames dropped from training either side of a test block
 
@@ -117,7 +143,7 @@ SEQ_W_CONTROL = 1.0               # nats per frame of a player controlling the b
 # Chosen on the bench (possession/bench, spellF1 on three other games, models never trained on
 # the game they are scored on). Before the bench: W_PLAYERS 0.02, W_FULL 0, no change points.
 SEQ_W_PLAYERS = 0.0               # x logit(p_home_players) per frame (self-trained, players only)
-SEQ_W_FULL = 0.35                 # x logit(p_home_full) per frame (cross-game, players + ball)
+SEQ_W_FULL = 1.0                  # x logit(p_home_full) per frame (cross-game, players + ball)
 # Cost of a possession change at a candidate event, and how much a reception by the new team
 # (or a close touch) pays back:
 SEQ_SWITCH_COST = 4.0             # nats
@@ -128,7 +154,13 @@ SEQ_W_KICK = 12.0                  # nats, a kick by the new team (first-time pa
 SEQ_DUR_MEDIAN_S = 10.0
 SEQ_DUR_SIGMA = 1.0
 SEQ_W_DUR = 0.3
+# W_FULL and W_CP were swept on five held-out games for each model that can supply the evidence:
+#   trajectory model (POSS_MODEL "sequence")  W_FULL 1.0, W_CP 1.0   mean spellF1 0.768
+#   boosted models   (POSS_MODEL "boosted")   W_FULL 0.5, W_CP 2.0   mean spellF1 0.679
+# Around either pair the mean moves by less than 0.01; switch cost, duration prior and event
+# bonuses stayed best where they were. BOOSTED_WEIGHTS is what `mall --mode boosted` applies.
 SEQ_W_CP = 1.0                    # x log P(change to team) / P(no change), learned change points
+BOOSTED_WEIGHTS = {"SEQ_W_FULL": 0.5, "SEQ_W_CP": 2.0}
 SEQ_CP_OFFSET = 0.0               # nats added to every learned change point
 SEQ_DENSE_GRID = 0                # frames: if > 0, candidate points everywhere on this grid
 SEQ_GAP_GRID = 25                 # frames: candidate points every second inside ball gaps > 2 s
@@ -137,3 +169,14 @@ SEQ_GAP_GRID = 25                 # frames: candidate points every second inside
 KICK_RISE = 5.0                   # m/s the ball's speed must rise by ...
 KICK_WINDOW = 12                  # ... within this many frames
 KICK_RADIUS = 1.5                 # m, kicker within this of the ball at the start of the rise
+
+
+# --- experiments ------------------------------------------------------------------------------
+# MALL_OVERRIDES='{"DEAD_W_LEARNED": 0.5}' replaces constants for one run (bench sweeps only;
+# a setting that is kept is written into this file).
+import json as _json
+import os as _os
+for _k, _v in _json.loads(_os.environ.get("MALL_OVERRIDES") or "{}").items():
+    if _k not in globals():
+        raise KeyError("unknown constant " + _k)
+    globals()[_k] = _v
