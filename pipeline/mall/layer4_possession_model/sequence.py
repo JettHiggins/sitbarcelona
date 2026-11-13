@@ -19,6 +19,7 @@ Needs PyTorch (CPU works, a GPU is much faster). Layout of a feature row:
 """
 
 import os
+import time
 
 import numpy as np
 
@@ -146,7 +147,23 @@ def build_net():
     return Net()
 
 
-def train(games, seed=0, steps=STEPS, verbose=False):
+def spell_weights(truth, half, power=0.5):
+    """Training-only weights: shorten the influence gap between long and short spells.
+
+    A 10-second possession has weight one. Weights are bounded so a noisy
+    single-frame annotation cannot dominate training. Never used at inference.
+    """
+    truth, half = np.asarray(truth), np.asarray(half)
+    out = np.zeros(len(truth), np.float32)
+    bounds = np.r_[0, np.flatnonzero((truth[1:] != truth[:-1]) |
+                                    (half[1:] != half[:-1])) + 1, len(truth)]
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        if half[a] > 0 and truth[a] in (0, 1):
+            out[a:b] = np.clip((250.0 / (b - a)) ** power, 0.25, 4.0)
+    return out
+
+
+def train(games, seed=0, steps=STEPS, verbose=False, spell_balance=0.0):
     """games: [(X (n, DIM), truth (n,) 0 H / 1 A / 2 D / -1, half (n,))]. Returns a state dict."""
     import torch
     import torch.nn.functional as Fn
@@ -154,6 +171,7 @@ def train(games, seed=0, steps=STEPS, verbose=False):
     torch.backends.cudnn.deterministic = True     # same seed, same machine -> same weights
     torch.backends.cudnn.benchmark = False
     rng = np.random.default_rng(seed)
+    started = time.monotonic()
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     net = build_net().to(dev)
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
@@ -161,18 +179,19 @@ def train(games, seed=0, steps=STEPS, verbose=False):
     data = []
     for X, truth, half in games:
         poss, ch = targets(truth)
+        sw = spell_weights(truth, half, spell_balance)
         for h in (1, 2):
             idx = np.flatnonzero(half == h)
             if len(idx) > WINDOW:
                 a, b = idx[0], idx[-1] + 1
-                data.append((X[a:b], poss[a:b], ch[a:b]))
+                data.append((X[a:b], poss[a:b], ch[a:b], sw[a:b]))
     sizes = np.array([len(d[0]) for d in data], float)
     weight = torch.tensor([0.3, 1.0, 1.0], device=dev)       # changes are ~4% of live frames
     net.train()
     for step in range(steps):
-        xb, pb, cb = [], [], []
+        xb, pb, cb, wb = [], [], [], []
         for g in rng.choice(len(data), BATCH, p=sizes / sizes.sum()):
-            X, poss, ch = data[g]
+            X, poss, ch, sw = data[g]
             s = int(rng.integers(0, len(X) - WINDOW))
             x, p, c = X[s:s + WINDOW], poss[s:s + WINDOW], ch[s:s + WINDOW]
             if rng.random() < 0.5:                             # the other team order
@@ -183,20 +202,29 @@ def train(games, seed=0, steps=STEPS, verbose=False):
                 x = x.copy()
                 x[:, _MIRROR] *= -1
             xb.append(x), pb.append(p), cb.append(c)
+            wb.append(sw[s:s + WINDOW])
         x = torch.from_numpy(np.stack(xb)).to(dev)
         p = torch.from_numpy(np.stack(pb)).to(dev)
         c = torch.from_numpy(np.stack(cb)).to(dev)
         lp, lc = net(x)
         live = p >= 0
-        loss = Fn.binary_cross_entropy_with_logits(lp[live], p[live].float()) + \
-            Fn.cross_entropy(lc[c >= 0], c[c >= 0], weight=weight)
+        if spell_balance:
+            w = torch.from_numpy(np.stack(wb)).to(dev)[live]
+            ploss = (Fn.binary_cross_entropy_with_logits(lp[live], p[live].float(),
+                                                        reduction="none") * w).sum() / w.sum()
+        else:
+            ploss = Fn.binary_cross_entropy_with_logits(lp[live], p[live].float())
+        loss = ploss + Fn.cross_entropy(lc[c >= 0], c[c >= 0], weight=weight)
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
         opt.step()
         sched.step()
         if verbose and (step % 250 == 0 or step == steps - 1):
-            print("step {:5d}  loss {:.4f}".format(step, float(loss)), flush=True)
+            elapsed = time.monotonic() - started
+            eta = elapsed * (steps - step - 1) / (step + 1)
+            print("step {:5d}/{:d} loss {:.4f} elapsed {:.0f}s ETA {:.0f}s".format(
+                step + 1, steps, float(loss), elapsed, eta), flush=True)
     return {k: v.cpu() for k, v in net.state_dict().items()}
 
 
