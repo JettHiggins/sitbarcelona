@@ -1,0 +1,10 @@
+{
+ "name": "matched_frame_cp-matched_dead1.0_w0.1",
+ "setting": {
+  "frame": "matched",
+  "cp": "matched",
+  "dead": "matched",
+  "dead_blend": 1.0,
+  "dead_weight": 0.1
+ }
+}
