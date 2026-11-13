@@ -87,6 +87,54 @@ Wes candidates differs from Mall on .73% of frames; this is disagreement,
 not an accuracy score. Mall remains the selected variant. Video evidence and
 the optional TCN are still unimplemented; no video score is implied.
 
+## Missed-spell diagnosis, 2026-11-13
+
+`python -m pipeline.wes.diagnose` reproduced the original/revisable/candidates
+`spellF1` and `macroF1` exactly from the earlier three-game report. The new
+ignored report, `pipeline/reports/wes/missed-spell-diagnosis.json`, contains
+per-spell and per-transition traces for **only** the three other-game keys.
+The committed source records the deterministic category definitions. At the
+official headline IoU 0.5, a missed spell is assigned its majority predicted
+label *inside the true interval*; this is a symptom, not a causal label.
+
+| Variant | Missed / true spells | Mostly D | Mostly wrong team | Mostly right team but unmatched | Mixed | Missed spells ≤5 s |
+|---|---:|---:|---:|---:|---:|---:|
+| Original Mall | 453 / 1166 | 153 | 176 | 120 | 4 | 371 |
+| Wes revisable | 451 / 1166 | 145 | 181 | 122 | 3 | 368 |
+| Wes candidates | 450 / 1166 | 145 | 180 | 122 | 3 | 367 |
+
+For original Mall, 28,414 true-live benchmark frames were predicted D.
+Of these, 26,922 were **already D in Layer 3's raw Viterbi path**;
+1,179 first became D at snapping, 186 at the duration step, and 127 at
+the final step. This provenance is not causal attribution, and event-derived
+dead/live keys may differ from the competition key. It does show that a
+snapping-only fix cannot cover most false-D frames on this benchmark.
+Wes revisable lowered false-D frames to 27,403, but its extra live islands
+still lowered mean `spellF1`.
+
+There were 852 true direct H/A changes in the approximate benchmark keys.
+Mall missed 428 within the official 12-frame tolerance. Of those missed
+changes, 374 already had a decoder candidate accessible within 12 frames,
+but only 158 had positive support for the destination team; 221 had
+frame ownership evidence favoring that team over the next second. Wes
+candidates raised positive target support to 309 of its 425 missed changes,
+yet barely altered the number missed. This is consistent with a combined
+ownership/sequence-score problem, not just missing candidate timestamps.
+The diagnostic uses the key for analysis on other games only; it does not
+modify model predictions or use BAR–ATH public labels.
+
+**Next controlled experiment:** compare a local three-state `D/H/A` decoder
+with Mall and both Wes modes. In uncertain windows, jointly score dead/live
+and team evidence, event-anchored transitions, and state durations, so a
+reopened D span pays for the entire resulting possession pattern. Keep clear
+half/kickoff constraints and the original output as an ablation. Calibrate
+the evidence scales on training games only, avoid counting correlated
+control/change-point evidence twice, and preserve the current project
+promotion gate. Report changes in all three missed-spell symptom groups,
+short-spell recall, spurious transitions, boundary timing, `spellF1` and
+`macroF1`. Wrong-team-majority spells may require better upstream ownership
+evidence even if decoding improves.
+
 ## Next entries
 
 The JSON report carries the complete dead/live precision and recall, predicted

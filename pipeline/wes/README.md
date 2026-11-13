@@ -54,6 +54,7 @@ hypothesis, never an automatic turnover.
 ```bash
 pipeline/.venv/bin/python -m unittest pipeline.wes.test_segmentation
 pipeline/.venv/bin/python -m pipeline.wes.evaluate
+pipeline/.venv/bin/python -m pipeline.wes.diagnose
 ```
 
 The evaluation is leave-one-game-out: for each of `bench1`, `bench2`, `bench3`,
@@ -64,6 +65,14 @@ source revision, scores, counts, precision/recall, boundary timing, regressions
 and explanation in `pipeline/WES_EXPERIMENT_LOG.md`. These games were used in
 earlier development and are not an untouched test. Do not tune on the public
 BAR–ATH five-minute labels or hand-correct the competition match.
+
+`diagnose` writes the ignored
+`pipeline/reports/wes/missed-spell-diagnosis.json`. It compares unmatched
+possessions at IoU 0.5, records their majority predicted label, traces false-D
+frames through Layer 3, and checks whether missed direct H/A switches had an
+accessible candidate, positive target bonus, or favorable ownership evidence.
+These are overlapping error mechanisms summarized into descriptive buckets,
+not causal proof or a score improvement by themselves.
 
 The project promotion gate requires mean held-out `spellF1` at least +0.02,
 improvement in at least two of three games, no per-game loss worse than −0.02,
