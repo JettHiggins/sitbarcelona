@@ -41,7 +41,7 @@ def frame_evidence(L2, L4):
     return llr
 
 
-def candidate_points(L2, z, L4=None):
+def candidate_points(L2, z, L4=None, extra_candidates=()):
     """{frame: (bonus if the new team is home, bonus if away)} - where possession may change."""
     E = L2["events"]
     pts = {}
@@ -78,6 +78,16 @@ def candidate_points(L2, z, L4=None):
     for s, e in zip(a, b[b > a[0]] if len(a) else []):
         for f in range(s + C.SEQ_GAP_GRID, e, C.SEQ_GAP_GRID):
             add(int(f), 0.0, 0.0)
+    extra = {}
+    for row in extra_candidates:
+        f = int(row['frame'])
+        if 0 <= f < len(z['half']) and z['half'][f] > 0:
+            oh, oa = extra.get(f, (0.0, 0.0))
+            extra[f] = (max(oh, float(row['bonus_home'])),
+                        max(oa, float(row['bonus_away'])))
+    for f, (bh, ba) in extra.items():
+        oh, oa = pts.get(f, (0.0, 0.0))
+        pts[f] = (oh + bh, oa + ba)
     return pts
 
 
@@ -121,13 +131,13 @@ def decode_spell(a, b, cum, pts):
     return lab
 
 
-def decode(z, L2, L3, L4):
+def decode(z, L2, L3, L4, dead_override=None, extra_candidates=()):
     """Per frame: 0 home, 1 away, 2 dead (and outside the halves)."""
     half = z["half"]
-    dead = L3["dead"].astype(bool) | (half == 0)
+    dead = (L3["dead"] if dead_override is None else dead_override).astype(bool) | (half == 0)
     llr = frame_evidence(L2, L4)
     cum = np.concatenate(([0.0], np.cumsum(llr)))
-    pts = candidate_points(L2, z, L4)
+    pts = candidate_points(L2, z, L4, extra_candidates)
     out = np.full(len(half), 2, np.int8)
     alive = ~dead
     a_ = np.flatnonzero(alive[1:] & ~alive[:-1]) + 1

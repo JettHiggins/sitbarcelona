@@ -250,15 +250,23 @@ def kickoff_breaks(state, half, kickoff_shape, max_ahead=500):
     return state
 
 
-def detect(z, F, L2):
+def detect(z, F, L2, trace=False):
     half = z["half"]
     llr, parts = evidence(z, F, L2)
     state = viterbi2(llr, half, C.DEAD_SWITCH_COST)
+    stages = {"viterbi": state.copy()}
     state = snap(state, half, restart_moments(z, F, parts["kickoff_shape"]), stop_moments(z, F),
                  C.DEAD_SNAP_WINDOW)
+    stages["snapped"] = state.copy()
     state = kickoff_breaks(state, half, parts["kickoff_shape"])
     state = enter_pitch(state, half, F)
+    stages["rules"] = state.copy()
     state = min_durations(state, half, int(C.DEAD_MIN_DEAD_S * 25), int(C.DEAD_MIN_ALIVE_S * 25))
-    state[before_kickoff(z, F)] = 1
+    stages["durations"] = state.copy()
+    hard_kickoff = before_kickoff(z, F)
+    stages["hard_kickoff"] = hard_kickoff
+    state[hard_kickoff] = 1
     state[half == 0] = 1
+    if trace:
+        return state, llr, parts, stages
     return state, llr, parts

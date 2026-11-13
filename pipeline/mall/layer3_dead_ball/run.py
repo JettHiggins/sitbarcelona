@@ -24,18 +24,21 @@ def build(verbose=True):
     z = load_layer("layer0")
     F = load_layer("layer1")
     L2 = load_layer("layer2")
-    dead, llr, parts = detect(z, F, L2)
+    dead, llr, parts, stages = detect(z, F, L2, trace=True)
     g = z["half"] > 0
     if verbose:
         print("dead on {:.1%} of graded frames  ({:.0f}s)".format(dead[g].mean(), time.time() - t0))
-    return dead, llr, parts
+    return dead, llr, parts, stages
 
 
 def main():
-    dead, llr, parts = build()
+    dead, llr, parts, stages = build()
     out = cache_path("layer3")
     np.savez_compressed(out, dead=dead, dead_llr=llr.astype(np.float32),
-                        **{"cue_" + k: v.astype(np.float32) for k, v in parts.items()})
+                        hard_kickoff=stages["hard_kickoff"].astype(np.int8),
+                        **{"cue_" + k: v.astype(np.float32) for k, v in parts.items()},
+                        **{"stage_" + k: v.astype(np.int8) for k, v in stages.items()
+                           if k != "hard_kickoff"})
     print("wrote", os.path.relpath(out, ROOT))
 
 
