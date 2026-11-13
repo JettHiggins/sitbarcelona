@@ -25,5 +25,11 @@ pipeline/reports/
 # Tiny synthetic viewer regression fixtures
 !possession-viewer/tests/fixtures/*.csv
 
+# Shared prediction snapshots for teammates; other generated outputs stay local.
+!possession-viewer/data/
+possession-viewer/data/*
+!possession-viewer/data/mall-model.csv
+!possession-viewer/data/mall-boosted.csv
+
 # Generated synthetic inspection test clip
 possession-viewer/tests/fixtures/inspection.webm

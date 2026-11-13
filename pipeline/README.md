@@ -1,7 +1,9 @@
 # Possession pipelines
 
 Possession implementations feed the existing possession viewer. Run commands from the
-repository root. Generated CSVs and caches stay local; viewer code is unchanged.
+repository root. The shared `mall-model.csv` and `mall-boosted.csv` prediction
+snapshots are tracked in `possession-viewer/data/`; other generated CSVs and caches
+stay local. Viewer code is unchanged.
 
 ## Install and run
 

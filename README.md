@@ -43,10 +43,18 @@ python dev.py viewer
 
 Open **http://127.0.0.1:8081/**. Stop the server with Ctrl+C. The viewer itself
 needs only Python's standard library and can launch before setup. A fresh clone
-has no match video or generated prediction files. For a CSV-loading smoke check,
-use the viewer's file picker to open
-`possession-viewer/tests/fixtures/comparison-fixture.csv` (synthetic data).
-Watching the actual match requires the separately supplied video and predictions.
+includes two prediction snapshots in `possession-viewer/data/`, available in the
+viewer's prediction selector:
+
+- `mall-model.csv`: the current trajectory-model predictions.
+- `mall-boosted.csv`: the gradient-boosted model predictions for comparison.
+
+Each file contains 199,319 ordered frame predictions with H/A/D labels and X for
+ungraded frames. These are the existing model outputs, not results from the
+unfinished temporal-model experiment. No training or match tracking data is
+needed to load them. Watching the actual match requires the separately supplied
+video. A small synthetic CSV is also available at
+`possession-viewer/tests/fixtures/comparison-fixture.csv`.
 
 ## Generate predictions for the real match
 
@@ -78,6 +86,8 @@ Preparation never resets an existing checkout.
 The first model run trains the models; allow substantial time on CPU and about
 8 GB of free memory. Later runs reuse trained models. The output is
 `possession-viewer/data/mall-model.csv`; start/reload the viewer to select it.
+Running the model replaces this tracked snapshot locally; review the resulting
+CSV change before committing an updated prediction snapshot.
 Match data, downloaded benchmarks, trained models, and generated reports remain
 local and are recreated through these commands.
 
