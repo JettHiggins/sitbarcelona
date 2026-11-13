@@ -116,6 +116,25 @@ See [pipeline setup and commands](../pipeline/README.md) to generate `lenny-mode
 `mall-model.csv`, or a model-free `mall-events.csv` locally. Load one using **Predictions CSV**,
 then choose another CSV to compare at the same video frame. Outputs use the same frame timeline.
 
+For Wes experiments, use **Compare with Mall** below the timeline. Pick `revisable`,
+`candidates`, `joint-d`, `joint-team`, or `joint`; the viewer loads that CSV as the
+selected prediction and compares it with `mall-model.csv`. **Previous** and **Next**
+jump to exact contiguous disagreement spans. Use the filter to inspect only
+dead/live or H/A changes. Expand **Exact disagreement ranges** to click any
+time and frame range directly. The cyan timeline ticks and dashed cyan line in the
+local trace show disagreement with Mall; amber still means disagreement with
+the public five-minute reference. At the current span, the panel shows both
+labels, frame range, duration, and the experiment's local `.segmentation.json`
+decision when available. Jumping fits that span and five seconds of context on
+each side in the timeline. The tactical video stays in your browser's local
+file picker; it is not uploaded.
+
+Outside the five-minute public reference there is **no known correct answer**
+in the viewer. Cyan marks are changes, not proven failures. The public labels
+are for alignment checks, never selecting a model or parameter.
+For the other-game score and missed-possession breakdown, read
+[Wes score analysis](../pipeline/WES_SCORE_ANALYSIS.md).
+
 ## Public ground-truth overlay
 
 The public five-minute reference loads automatically: frames **11185–18684** (25 fps).
@@ -135,6 +154,7 @@ retains the reference. Reference labels are for visual evaluation only and do no
 Browser regression checks (with `playwright-cli` installed and the viewer served on port 8080):
 
 ```bash
+node possession-viewer/tests/comparison.js
 playwright-cli open http://localhost:8080
 playwright-cli run-code --filename=possession-viewer/tests/ground-truth.js
 playwright-cli run-code --filename=possession-viewer/tests/csv-picker.js

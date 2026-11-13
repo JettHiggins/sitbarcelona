@@ -7,6 +7,7 @@
   <title>Possession viewer</title>
   <link rel="stylesheet" href="styles.css">
   <script src="match.js" defer></script>
+  <script src="comparison.js" defer></script>
   <script src="reverse-cache.js" defer></script>
   <script src="app.js" defer></script>
 </head>
@@ -49,7 +50,7 @@
         </div>
         <div id="comparison-status" class="comparison-status" role="status" hidden></div>
         <canvas id="trace" role="img" aria-label="Possession decisions, ten seconds either side of the current frame"></canvas>
-        <div class="trace-legend" id="trace-legend" hidden><span>━ Prediction</span><span>┄ Ground truth</span></div>
+        <div class="trace-legend" id="trace-legend" hidden><span>━ Selected</span><span id="mall-trace-legend" hidden>┄ Mall</span><span id="reference-trace-legend" hidden>┄ Public reference</span></div>
         <button id="jump-reference" class="reference-link" type="button" hidden>Review ground truth ↗</button>
       </aside>
     </div>
@@ -84,6 +85,29 @@
         <div class="timeline-axis"><span id="timeline-start-label"></span><span id="timeline-end-label"></span></div>
         <input id="seek" type="range" min="0" max="199318" value="0" aria-label="Seek video frame">
       </div>
+      <section class="experiment-panel" aria-label="Experiment comparison">
+        <div class="experiment-toolbar">
+          <label for="experiment-select">Compare with Mall</label>
+          <select id="experiment-select" aria-label="Wes experiment">
+            <option value="">Choose a Wes experiment</option>
+          </select>
+          <select id="difference-filter" aria-label="Difference type" disabled>
+            <option value="all">All differences</option>
+            <option value="dead-live">Dead / live</option>
+            <option value="team">Home / away</option>
+          </select>
+          <button id="previous-difference" type="button" disabled>← Previous</button>
+          <button id="next-difference" type="button" disabled>Next →</button>
+        </div>
+        <div id="experiment-summary" class="experiment-summary" role="status">Choose a Wes CSV to compare its labels with Mall at the same video frame.</div>
+        <div id="experiment-current" class="experiment-current" hidden></div>
+        <div id="experiment-evidence" class="experiment-evidence" hidden></div>
+        <details id="experiment-spans" class="experiment-spans" hidden>
+          <summary>Exact disagreement ranges</summary>
+          <ol id="experiment-span-list"></ol>
+        </details>
+        <p class="experiment-caveat">Cyan marks show model disagreements, not confirmed mistakes. Only the public five-minute reference has expected labels; do not use it to choose model settings.</p>
+      </section>
     </div>
   </main>
 </body>

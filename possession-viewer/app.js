@@ -16,6 +16,7 @@ const state = {
   timelineStart: 0, timelineEnd: FRAME_COUNT,
   frame: 0, predictions: null, videoUrl: null, hasVideo: false,
   reference: null, referenceError: null, predictionSource: '', csvLoadVersion: 0,
+  mallBaseline: null, experiment: null, experimentError: '',
   direction: 1, speed: 1, reversing: false, reverseTimer: null, playVersion: 0,
   zoom: 1, panX: 0, panY: 0,
   reverseCache: null, cacheVisible: false, reverseMode: null, warmTimer: null,
@@ -64,6 +65,7 @@ function setFrame(frame) {
   $('decision-symbol').className = `decision-symbol ${code.toLowerCase()}`;
   $('decision-symbol').setAttribute('aria-label', state.predictions ? LABELS[code].name : 'No predictions loaded');
   updateComparison();
+  updateExperimentAtFrame();
   drawTrace();
 }
 
@@ -126,6 +128,150 @@ function parseCsv(text, filename) {
   return { labels, rows, duplicates, filename };
 }
 
+function serverCsv(name) {
+  return { name, text: async () => {
+    const response = await fetch(`data/${encodeURIComponent(name)}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`${name}: could not load CSV.`);
+    return response.text();
+  } };
+}
+
+function filteredDifferenceSpans() {
+  if (!state.experiment) return [];
+  const filter = $('difference-filter').value;
+  return filter === 'all' ? state.experiment.spans :
+    state.experiment.spans.filter(span => span.kind === filter);
+}
+
+function updateExperimentSelection() {
+  const select = $('experiment-select');
+  const source = state.predictionSource;
+  select.value = source.startsWith('data:wes-') &&
+    [...select.options].some(option => option.value === source) ? source : '';
+}
+
+function jumpToDifference(span) {
+  setTimelineWindow(span.start - 125, Math.max(250, span.end - span.start + 250));
+  seekToFrame(span.start);
+}
+
+function updateExperimentSpanList(spans) {
+  const details = $('experiment-spans');
+  const list = $('experiment-span-list');
+  details.hidden = !state.experiment || !spans.length;
+  list.replaceChildren();
+  for (const span of spans) {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = `${formatTime(span.start / FPS)} · f${span.start}–${span.end - 1} · ` +
+      `${((span.end - span.start) / FPS).toFixed(2)} s · Mall ${LABELS[span.mall].display} → ` +
+      `Wes ${LABELS[span.experiment].display} · ${span.kind === 'team' ? 'team' : 'dead/live'}`;
+    button.addEventListener('click', () => jumpToDifference(span));
+    item.append(button);
+    list.append(item);
+  }
+}
+
+function updateExperimentPanel() {
+  const experiment = state.experiment;
+  const summary = $('experiment-summary');
+  if (state.experimentError) summary.textContent = state.experimentError;
+  else if (experiment) {
+    const pct = experiment.comparedFrames ?
+      (100 * experiment.differenceFrames / experiment.comparedFrames).toFixed(2) : '0.00';
+    const filtered = filteredDifferenceSpans();
+    summary.textContent = `${experiment.filename} differs from Mall on ${experiment.differenceFrames.toLocaleString()} of ${experiment.comparedFrames.toLocaleString()} comparable frames (${pct}%; X excluded). ` +
+      `${experiment.spans.length.toLocaleString()} exact disagreement spans; ${filtered.length.toLocaleString()} shown by this filter. ` +
+      `Dead/live: ${experiment.framesByKind['dead-live'].toLocaleString()} frames; home/away: ${experiment.framesByKind.team.toLocaleString()} frames.`;
+  } else if (state.predictions?.filename?.startsWith('wes-')) {
+    summary.textContent = 'Loading Mall and experiment diagnostics…';
+  } else summary.textContent = 'Choose a Wes CSV to compare its labels with Mall at the same video frame.';
+  $('difference-filter').disabled = !experiment;
+  const canNavigate = filteredDifferenceSpans().length > 0;
+  $('previous-difference').disabled = !canNavigate;
+  $('next-difference').disabled = !canNavigate;
+  updateExperimentSpanList(filteredDifferenceSpans());
+  updateComparison();
+  updateExperimentAtFrame();
+  drawTimeline();
+  drawTrace();
+}
+
+function evidenceAt(frame, span) {
+  const diagnostic = state.experiment?.diagnostic;
+  if (!diagnostic) return 'No experiment trace is available for this frame.';
+  const start = span?.start ?? frame, end = span?.end ?? frame + 1;
+  const overlaps = row => row.start < end && row.end > start;
+  const notes = [];
+  const window = diagnostic.windows?.find(overlaps);
+  if (window) notes.push(`Joint window f${window.start}–${window.end - 1}: ${window.changed_frames} frames changed, ${window.changed_D_frames} dead/live changes, ${window.boundaries} boundary options.`);
+  const revision = diagnostic.dead_revisions?.find(overlaps);
+  if (revision) notes.push(`Dead-ball proposal ${revision.reopened ? 'reopened' : 'kept D'}; live margin ${Number(revision.live_margin).toFixed(2)}; source ${revision.source}.`);
+  const candidates = diagnostic.change_candidates;
+  if (candidates?.length) {
+    const nearby = candidates.filter(row => row.frame >= start - 12 && row.frame < end + 12);
+    if (nearby.length) {
+      const strongest = nearby.reduce((best, row) =>
+        Math.max(row.bonus_home || 0, row.bonus_away || 0) > Math.max(best.bonus_home || 0, best.bonus_away || 0) ? row : best);
+      notes.push(`${nearby.length} contact/change hypotheses within 12 frames; strongest at f${strongest.frame} (${strongest.source}), bonus ${Math.max(strongest.bonus_home || 0, strongest.bonus_away || 0).toFixed(2)}. A hypothesis does not force a turnover.`);
+    }
+  }
+  return notes.length ? notes.join(' ') : 'No local experiment decision is recorded at this frame.';
+}
+
+function updateExperimentAtFrame() {
+  const experiment = state.experiment;
+  $('experiment-current').hidden = !experiment;
+  $('experiment-evidence').hidden = !experiment;
+  if (!experiment) return;
+  const frame = state.frame;
+  const mall = experiment.mallLabels[frame], selected = experiment.selectedLabels[frame];
+  const span = PossessionCompare.containing(filteredDifferenceSpans(), frame);
+  if (span) {
+    const seconds = ((span.end - span.start) / FPS).toFixed(2);
+    $('experiment-current').textContent = `At f${frame}: Mall ${LABELS[mall].display} → ${experiment.filename} ${LABELS[selected].display}. ` +
+      `${span.kind === 'team' ? 'Team disagreement' : 'Dead/live disagreement'} at f${span.start}–${span.end - 1} (${seconds} s).`;
+  } else {
+    const kind = PossessionCompare.kind(mall, selected);
+    $('experiment-current').textContent = kind ?
+      `At f${frame}: Mall ${LABELS[mall].display} → ${experiment.filename} ${LABELS[selected].display}; this span is hidden by the current filter.` :
+      `At f${frame}: ${mall && selected && mall === selected ? 'Mall and the experiment agree' : 'No comparable labels'}${mall && selected && mall === selected ? ` (${LABELS[mall].display})` : ''}.`;
+  }
+  $('experiment-evidence').textContent = evidenceAt(frame, span);
+}
+
+async function loadExperimentComparison(parsed, version) {
+  state.experiment = null;
+  state.experimentError = '';
+  updateExperimentSelection();
+  updateExperimentPanel();
+  if (!/^wes-[a-z0-9-]+\.csv$/i.test(parsed.filename)) return;
+  try {
+    const baseline = state.mallBaseline || parseCsv(await serverCsv('mall-model.csv').text(), 'mall-model.csv');
+    if (version !== state.csvLoadVersion) return;
+    if (baseline.rows !== FRAME_COUNT || parsed.rows !== FRAME_COUNT || baseline.duplicates || parsed.duplicates) {
+      throw new Error('Comparison requires complete, unique Mall and Wes CSVs.');
+    }
+    state.mallBaseline = baseline;
+    const stem = parsed.filename.replace(/\.csv$/i, '');
+    let diagnostic = null;
+    try {
+      const response = await fetch(`data/${encodeURIComponent(stem + '.segmentation.json')}`, { cache: 'no-store' });
+      if (response.ok) diagnostic = await response.json();
+    } catch { /* CSV comparison still works without a trace. */ }
+    if (version !== state.csvLoadVersion) return;
+    state.experiment = { filename: parsed.filename, mallLabels: baseline.labels,
+      selectedLabels: parsed.labels, diagnostic,
+      ...PossessionCompare.buildSpans(baseline.labels, parsed.labels) };
+    updateExperimentPanel();
+  } catch (error) {
+    if (version !== state.csvLoadVersion) return;
+    state.experimentError = `Could not compare with Mall: ${error.message}`;
+    updateExperimentPanel();
+  }
+}
+
 function updateCsvSelection() {
   const select = $('prediction-select');
   select.querySelector('option[value="local"]')?.remove();
@@ -172,7 +318,13 @@ async function loadCsvOptions() {
     if (selected.startsWith('data:') && ![...select.options].some(option => option.value === selected)) {
       select.add(new Option(state.predictions.filename, selected));
     }
+    const experimentSelect = $('experiment-select');
+    experimentSelect.replaceChildren(new Option('Choose a Wes experiment', ''));
+    for (const name of [...names].filter(name => /^wes-[a-z0-9-]+\.csv$/i.test(name)).sort()) {
+      experimentSelect.add(new Option(name.replace(/^wes-|\.csv$/g, ''), `data:${name}`));
+    }
     updateCsvSelection();
+    updateExperimentSelection();
   } catch {
     // Manual uploads remain available on hosts without directory listings.
     if (select.options.length === 1) select.options[0].textContent = 'Predictions CSV';
@@ -199,9 +351,11 @@ async function loadCsv(file, source = 'local') {
     setMessage(notes.join(' · ') + '.');
     setFrame(state.frame);
     drawTimeline();
+    loadExperimentComparison(parsed, loadVersion);
   } catch (error) {
     if (loadVersion !== state.csvLoadVersion) return;
     updateCsvSelection();
+    updateExperimentSelection();
     setMessage(error.message, true);
   }
 }
@@ -252,7 +406,9 @@ function updateComparison() {
   $('comparison-status').classList.toggle('mismatch', mismatch);
   const statusText = mismatch ? 'Mismatch' : 'Matches ground truth';
   if ($('comparison-status').textContent !== statusText) $('comparison-status').textContent = statusText;
-  $('trace-legend').hidden = !state.reference;
+  $('trace-legend').hidden = !state.reference && !state.experiment;
+  $('mall-trace-legend').hidden = !state.experiment;
+  $('reference-trace-legend').hidden = !state.reference;
   $('jump-reference').hidden = !state.reference && !state.referenceError;
 }
 
@@ -300,7 +456,7 @@ function updateTimelinePosition() {
   $('seek-progress').style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
   $('timeline-start-label').textContent = `${formatTime(start / FPS)} · f${start}`;
   $('timeline-end-label').textContent = `${formatTime((end - 1) / FPS)} · f${end - 1}`;
-  $('timeline').setAttribute('aria-label', `Prediction and ground-truth timeline, frames ${start} through ${end - 1}`);
+  $('timeline').setAttribute('aria-label', `Prediction, Mall comparison and public reference timeline, frames ${start} through ${end - 1}`);
 }
 
 function setTimelineWindow(start, span) {
@@ -347,12 +503,21 @@ function drawTimeline() {
       ctx.fillRect(x, 0, 1, 6);
     }
   }
+  if (state.experiment) {
+    ctx.fillStyle = '#73dfe1';
+    for (const difference of filteredDifferenceSpans()) {
+      const a = Math.max(viewStart, difference.start), b = Math.min(viewEnd, difference.end);
+      if (b <= a) continue;
+      ctx.fillRect((a - viewStart) / span * width, 8,
+                   Math.max(1, (b - a) / span * width), 2);
+    }
+  }
   if (state.reference) {
     for (const [start, end, code] of state.reference.segments) {
       const a = Math.max(viewStart, start), b = Math.min(viewEnd, end);
       if (b <= a) continue;
       ctx.fillStyle = LABELS[code].color;
-      ctx.fillRect((a - viewStart) / span * width, 12, Math.max(1, (b - a) / span * width), height - 12);
+      ctx.fillRect((a - viewStart) / span * width, 14, Math.max(1, (b - a) / span * width), height - 14);
     }
     if (state.predictions) {
       // Aggregate errors within each pixel; even a one-frame error remains visible.
@@ -362,7 +527,7 @@ function drawTimeline() {
         for (let frame = start; frame < end; frame++) {
           const truth = referenceAt(frame);
           if (truth && truth !== state.predictions.labels[frame]) {
-            ctx.fillStyle = '#ffb36b'; ctx.fillRect(x, 8, 1, 2); break;
+            ctx.fillStyle = '#ffb36b'; ctx.fillRect(x, 11, 1, 2); break;
           }
         }
       }
@@ -389,6 +554,27 @@ function drawTrace() {
   ctx.fillStyle = '#aaa'; ctx.font = '9px monospace';
   ['A','D','H','X'].forEach((code, index) => { ctx.fillStyle = LABELS[code].color; ctx.fillText(LABELS[code].display, 4, pad + index * innerHeight / 3 + 3); });
   const frameAtX = x => state.frame + Math.round((x - left) / Math.max(1, width - left - 1) * 500) - 250;
+  if (state.experiment) {
+    const mall = state.experiment.mallLabels;
+    for (let x = left; x < width; x++) {
+      const frame = frameAtX(x);
+      if (PossessionCompare.kind(mall[frame], state.experiment.selectedLabels[frame])) {
+        ctx.fillStyle = '#73dfe122'; ctx.fillRect(x, 0, 1, height);
+      }
+    }
+    ctx.strokeStyle = '#73dfe1'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    let previousMall = null;
+    for (let x = left; x < width; x++) {
+      const code = mall[frameAtX(x)];
+      if (!LABELS[code]) { previousMall = null; continue; }
+      const y = pad + LABELS[code].level * innerHeight / 3;
+      if (previousMall) { ctx.lineTo(x, previousMall.y); ctx.lineTo(x, y); }
+      else ctx.moveTo(x, y);
+      previousMall = { y };
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
   if (state.predictions && state.reference) {
     for (let x = left; x < width; x++) {
       const frame = frameAtX(x), truth = referenceAt(frame);
@@ -485,12 +671,22 @@ $('prediction-select').addEventListener('change', event => {
   const source = event.target.value;
   if (!source.startsWith('data:')) return;
   const name = source.slice(5);
-  loadCsv({ name, text: async () => {
-    const response = await fetch(`data/${encodeURIComponent(name)}`, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`${name}: could not load CSV.`);
-    return response.text();
-  } }, source);
+  loadCsv(serverCsv(name), source);
 });
+$('experiment-select').addEventListener('change', event => {
+  const source = event.target.value;
+  if (!source) { loadCsv(serverCsv('mall-model.csv'), 'data:mall-model.csv'); return; }
+  if (!source.startsWith('data:wes-')) return;
+  loadCsv(serverCsv(source.slice(5)), source);
+});
+$('difference-filter').addEventListener('change', updateExperimentPanel);
+for (const [id, direction] of [['previous-difference', -1], ['next-difference', 1]]) {
+  $(id).addEventListener('click', () => {
+    const span = PossessionCompare.adjacent(filteredDifferenceSpans(), state.frame, direction);
+    if (!span) return;
+    jumpToDifference(span);
+  });
+}
 $('open-video').addEventListener('click', () => $('video-file').click());
 $('video-file').addEventListener('change', event => {
   const file = event.target.files[0];
@@ -829,6 +1025,8 @@ $('reset-predictions').addEventListener('click', () => {
   ++state.csvLoadVersion;
   state.predictions = null;
   state.predictionSource = '';
+  state.experiment = null;
+  state.experimentError = '';
   $('prediction-file').value = '';
   updateCsvSelection();
   $('decision-symbol').hidden = true;
@@ -837,6 +1035,8 @@ $('reset-predictions').addEventListener('click', () => {
   updateFrameCheck();
   setFrame(state.frame);
   drawTimeline();
+  updateExperimentSelection();
+  updateExperimentPanel();
   setMessage('');
 });
 setPlaybackRate(1);
@@ -861,6 +1061,7 @@ $('timeline-wrap').addEventListener('pointermove', event => {
   const expected = referenceAt(frame);
   $('timeline-wrap').title = `Frame ${frame} · ${formatTime(frame / FPS)}` +
     (predicted ? ` · Predicted ${LABELS[predicted].display}` : '') +
+    (state.experiment ? ` · Mall ${LABELS[state.experiment.mallLabels[frame] || 'X'].display}` : '') +
     (expected ? ` · Expected ${LABELS[expected].display}` : '');
 });
 $('seek').addEventListener('input', event => seekToFrame(event.target.value));
