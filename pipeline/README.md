@@ -56,24 +56,21 @@ output, and the explicit `--reuse-cache` option. The original `model` mode remai
 
 ### Wes segmentation experiments
 
-`wes` is a separate experimental entry point on `wes_deadball+video`. It reuses
-Mall's cleaned tracking and trained evidence but has its own dead/live and change
-candidate logic, settings, diagnostics and output CSVs. `mall --mode model` remains
-the unchanged comparison output. See [Wes usage and architecture](wes/README.md)
+`wes` is a single dead-ball revision path on `wes_deadball+video`. It reuses
+Mall's cleaned tracking and trained evidence, then runs the former `joint-d`
+decoder. `mall --mode model` remains the unchanged comparison output. See [Wes usage and architecture](wes/README.md)
 and [the measured experiment log](WES_EXPERIMENT_LOG.md).
 
 ```bash
 python -m pipeline.run prepare-mall --bench-src /path/to/metrica-sample-data
 python -m pipeline.wes.evaluate
-python -m pipeline.run mall --mode model
-python -m pipeline.run wes --mode revisable --reuse-cache
-python -m pipeline.run wes --mode candidates --reuse-cache
-python -m unittest pipeline.wes.test_segmentation
+python -m pipeline.run wes
+python -m unittest pipeline.wes.test_joint pipeline.wes.test_diagnose
 ```
 
-`pipeline/reports/wes/segmentation-evaluation.json` contains one row per held-out
-game and variant. The output CSVs have 199,319 rows on the full challenge bundle.
-Variant diagnostics are adjacent `.segmentation.json` files and are Git-ignored.
+`pipeline/reports/wes/segmentation-evaluation.json` compares Mall and Wes per
+held-out game. The output CSVs have 199,319 rows on the full challenge bundle.
+Wes diagnostics are adjacent `.segmentation.json` files and are Git-ignored.
 The evaluation command reads only the three other-game answer keys. It never reads
 the BAR–ATH public five-minute labels.
 

@@ -24,7 +24,7 @@ from ..vendor.challenge import possession_metrics as metrics
 from .evaluate import GAMES, score, source_revision
 from .segmentation import predict
 
-VARIANTS = ('original', 'revisable', 'candidates', 'joint-d', 'joint-team', 'joint')
+VARIANTS = ('original', 'wes')
 HEADLINE_IOU = 0.5
 BOUNDARY_TOLERANCE = 12
 
@@ -151,7 +151,7 @@ def main():
         baseline = decode(z, L2, L3, L4)
         outputs = {'original': (baseline, [])}
         for variant in VARIANTS[1:]:
-            labels, diagnostics = predict(z, F, L2, L3, L4, variant=variant)
+            labels, diagnostics = predict(z, F, L2, L3, L4)
             outputs[variant] = (labels, diagnostics['change_candidates'])
         row = dict(input_key_sha256=hashlib.sha256(key.read_bytes()).hexdigest(),
                    training_games=[t for t in GAMES if t != tag], variants={})

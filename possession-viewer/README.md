@@ -116,9 +116,8 @@ See [pipeline setup and commands](../pipeline/README.md) to generate `lenny-mode
 `mall-model.csv`, or a model-free `mall-events.csv` locally. Load one using **Predictions CSV**,
 then choose another CSV to compare at the same video frame. Outputs use the same frame timeline.
 
-For Wes experiments, use **Compare with Mall** below the timeline. Pick `revisable`,
-`candidates`, `joint-d`, `joint-team`, or `joint`; the viewer loads that CSV as the
-selected prediction and compares it with `mall-model.csv`. **Previous** and **Next**
+For the selected Wes model, use **Compare with Mall** below the timeline. Pick
+`model`; the viewer loads `wes-model.csv` and compares it with `mall-model.csv`. **Previous** and **Next**
 jump to exact contiguous disagreement spans. Use the filter to inspect only
 dead/live or H/A changes. Expand **Exact disagreement ranges** to click any
 time and frame range directly. The cyan timeline ticks and dashed cyan line in the

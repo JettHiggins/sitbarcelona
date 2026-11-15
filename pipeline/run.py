@@ -76,8 +76,8 @@ def mall(mode, output, reuse_cache=False):
     write_csv(labels, load_layer('layer0')['half'], output)
 
 
-def wes(mode, output, reuse_cache=False):
-    """Run Wes experiments with Mall's shared tracking/model evidence."""
+def wes(output, reuse_cache=False):
+    """Run the selected Wes dead-ball decoder with Mall's shared evidence."""
     from .mall.common import load_layer
     from .wes.segmentation import predict
 
@@ -86,7 +86,7 @@ def wes(mode, output, reuse_cache=False):
         mall('model', ROOT / 'possession-viewer/data/mall-model.csv')
     z, F, L2, L3, L4 = (load_layer(x) for x in
                         ('layer0', 'layer1', 'layer2', 'layer3', 'layer4'))
-    labels, diagnostics = predict(z, F, L2, L3, L4, variant=mode)
+    labels, diagnostics = predict(z, F, L2, L3, L4)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.with_suffix('.segmentation.json').write_text(json.dumps(diagnostics, indent=2) + '\n')
     write_csv(labels, z['half'], output)
@@ -116,10 +116,7 @@ def main():
         if name == 'mall':
             p.add_argument('--reuse-cache', action='store_true',
                            help='Interaction mode only: reuse existing Mall tracking/model caches')
-    p = subs.add_parser('wes', help='Separate possession segmentation experiments using Mall evidence')
-    p.add_argument('--mode', choices=['viterbi', 'snapped', 'rules', 'durations',
-                                      'revisable', 'candidates', 'joint-d',
-                                      'joint-team', 'joint'], required=True)
+    p = subs.add_parser('wes', help='Selected dead-ball segmentation using Mall evidence')
     p.add_argument('--output', type=Path)
     p.add_argument('--data-dir', type=Path, help='Data bundle root or tactical folder')
     p.add_argument('--reuse-cache', action='store_true',
@@ -197,11 +194,12 @@ def main():
         output = (args.output or ROOT / 'possession-viewer/data/paper.csv').resolve()
         tactical(output, args.profile, args.status, args.status_file)
         return
-    output = (args.output or ROOT / f'possession-viewer/data/{args.pipeline}-{args.mode}.csv').resolve()
+    default_name = 'wes-model.csv' if args.pipeline == 'wes' else f'{args.pipeline}-{args.mode}.csv'
+    output = (args.output or ROOT / 'possession-viewer/data' / default_name).resolve()
     if args.pipeline == 'mall':
         mall(args.mode, output, args.reuse_cache)
     elif args.pipeline == 'wes':
-        wes(args.mode, output, args.reuse_cache)
+        wes(output, args.reuse_cache)
     else:
         from .lenny import config
         config.OUTPUT = output

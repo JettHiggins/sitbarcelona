@@ -246,7 +246,7 @@ async function loadExperimentComparison(parsed, version) {
   state.experimentError = '';
   updateExperimentSelection();
   updateExperimentPanel();
-  if (!/^wes-[a-z0-9-]+\.csv$/i.test(parsed.filename)) return;
+  if (parsed.filename !== 'wes-model.csv') return;
   try {
     const baseline = state.mallBaseline || parseCsv(await serverCsv('mall-model.csv').text(), 'mall-model.csv');
     if (version !== state.csvLoadVersion) return;
@@ -319,8 +319,8 @@ async function loadCsvOptions() {
       select.add(new Option(state.predictions.filename, selected));
     }
     const experimentSelect = $('experiment-select');
-    experimentSelect.replaceChildren(new Option('Choose a Wes experiment', ''));
-    for (const name of [...names].filter(name => /^wes-[a-z0-9-]+\.csv$/i.test(name)).sort()) {
+    experimentSelect.replaceChildren(new Option('Choose Wes model', ''));
+    for (const name of [...names].filter(name => name === 'wes-model.csv')) {
       experimentSelect.add(new Option(name.replace(/^wes-|\.csv$/g, ''), `data:${name}`));
     }
     updateCsvSelection();

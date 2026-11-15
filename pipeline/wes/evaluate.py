@@ -1,4 +1,4 @@
-"""Held-out Wes segmentation ablations; never reads the BAR-ATH public labels.
+"""Held-out evaluation of the selected Wes decoder against Mall.
 
 Run after `python -m pipeline.run prepare-mall --bench-src PATH`:
     python -m pipeline.wes.evaluate
@@ -20,8 +20,7 @@ from ..mall.layer5_sequence_decoder.decoder import decode
 from .segmentation import predict
 
 GAMES = ('bench1', 'bench2', 'bench3')
-VARIANTS = ('viterbi', 'snapped', 'rules', 'durations', 'revisable', 'candidates',
-            'joint-d', 'joint-team', 'joint')
+VARIANTS = ('wes',)
 
 
 def source_revision():
@@ -101,7 +100,7 @@ def main():
         original = decode(z, L2, L3, evidence)
         row['original'] = score(y, np.where(z['half'] == 0, metrics.X, original))
         for name in VARIANTS:
-            labels, diagnostics = predict(z, F, L2, L3, evidence, variant=name)
+            labels, diagnostics = predict(z, F, L2, L3, evidence)
             row[name] = score(y, np.where(z['half'] == 0, metrics.X, labels))
             row[name]['changed_dead_frames'] = diagnostics['changed_dead_frames']
             row[name]['reopened_spans'] = sum(d['reopened'] for d in diagnostics['dead_revisions'])

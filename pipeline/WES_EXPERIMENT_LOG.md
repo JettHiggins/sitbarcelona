@@ -179,10 +179,28 @@ ownership/control evidence or an additional compatible other-game benchmark.
 
 ## Next entries
 
+### 2026-11-15 — one Wes collaboration path
+
+Per the user's request, the former `joint-d` algorithm is the sole supported
+Wes entry point and writes `wes-model.csv`. Historical Wes ablations were
+removed from the CLI and viewer; their results above remain for provenance.
+The regenerated full-match CSV is byte-for-byte identical to the previous
+`wes-joint-d.csv`, and its decoder window diagnostics are identical. The
+refreshed held-out mean is unchanged: Wes `spellF1` 0.6832944252 and
+`macroF1` 0.9028881112; Mall `spellF1` 0.6826333572 and `macroF1`
+0.9010667356. Wes improves two of three games but still fails the project
++0.02 promotion gate. This consolidation selects a single development and
+potential submission path by user choice; it does not establish a private
+match score improvement. `mall-model.csv` remains the comparison baseline.
+
+The one-command run and reproduction instructions are in
+[Wes README](wes/README.md). No competition labels informed this change.
+
 The JSON report carries the complete dead/live precision and recall, predicted
 counts, short-spell recall, and 12/25-frame boundary precision/recall/latency for
-each variant and game. Keep `mall-model.csv` as the selected output under the
-current gate. If later experiments pass all gates, add another dated entry with
+each variant and game. Under the original promotion gate, Mall is still the
+better-validated choice; the user has selected Wes as a separate collaboration
+and possible submission path. If later experiments pass all gates, add another dated entry with
 the new source fingerprint, per-game scores and explanation before freezing it.
 
 ## Separate later experiments

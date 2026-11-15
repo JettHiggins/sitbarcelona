@@ -1,14 +1,12 @@
-"""Constrained, local semi-Markov decoding over dead/home/away states.
+"""Constrained local decoder for uncertain Mall dead-ball windows.
 
-The original Mall prediction is frozen outside windows selected by disagreement
-among its own cues. Three ablations isolate D revision, H/A revision, and both.
-No answer key or competition-match label is read here.
+The original Mall prediction is frozen outside selected windows. Existing
+live H/A labels remain fixed. No answer key or competition-match label is read.
 """
 
 import numpy as np
 
 from ..mall import config as C
-from ..mall.layer1_features.features import rolling_mean
 from ..mall.layer2_touches.touches import RECEIVE
 from ..mall.layer5_sequence_decoder.decoder import (
     candidate_points, decode, duration_prior, frame_evidence,
@@ -35,21 +33,13 @@ def _control_mask(events, n):
     return result
 
 
-def windows(z, L2, L3, base, owner, mode):
+def windows(z, L2, L3, base):
     """Select short uncertainty neighborhoods from the model's own disagreement."""
     n = len(base)
     half = z['half']
     raw_live = ~L3['stage_viterbi'].astype(bool)
     d_trigger = (base == D) & (raw_live | _control_mask(L2['events'], n))
-    avg_owner = rolling_mean(owner, W.JOINT_OWNER_AVG_FRAMES)
-    sign = np.where(base == H, 1, np.where(base == A, -1, 0))
-    team_trigger = (base < D) & (sign * avg_owner < -W.JOINT_OWNER_CONFLICT)
-    if mode == 'joint-d':
-        trigger = d_trigger
-    elif mode == 'joint-team':
-        trigger = team_trigger
-    else:
-        trigger = d_trigger | team_trigger
+    trigger = d_trigger
     proposed = []
     for h in (1, 2):
         indices = np.flatnonzero(half == h)
@@ -68,7 +58,7 @@ def windows(z, L2, L3, base, owner, mode):
         else:
             merged.append((start, stop))
     return merged, dict(D_trigger_frames=int(d_trigger.sum()),
-                        team_trigger_frames=int(team_trigger.sum()))
+                        team_trigger_frames=0)
 
 
 def _transition_cost(old, new, frame, points):
@@ -79,23 +69,19 @@ def _transition_cost(old, new, frame, points):
     return float(C.SEQ_SWITCH_COST - points.get(frame, (0.0, 0.0))[new])
 
 
-def _allowed(base, hard, mode):
+def _allowed(base, hard):
     allowed = np.zeros((3, len(base)), bool)
     allowed[D] = base == D
-    if mode == 'joint-d':
-        allowed[H] = ((base == D) & ~hard) | (base == H)
-        allowed[A] = ((base == D) & ~hard) | (base == A)
-    else:
-        allowed[H] = ((base == D) & ~hard & (mode == 'joint')) | (base < D)
-        allowed[A] = ((base == D) & ~hard & (mode == 'joint')) | (base < D)
+    allowed[H] = ((base == D) & ~hard) | (base == H)
+    allowed[A] = ((base == D) & ~hard) | (base == A)
     return allowed
 
 
-def decode_window(start, stop, base, dead_llr, owner_llr, hard, points, mode,
+def decode_window(start, stop, base, dead_llr, owner_llr, hard, points,
                   left=None, right=None):
     """Exact segment DP on a sparse boundary grid inside one uncertain window."""
     local = base[start:stop]
-    allowed = _allowed(local, hard[start:stop], mode)
+    allowed = _allowed(local, hard[start:stop])
     dead = np.nan_to_num(dead_llr[start:stop].astype(float))
     owner = np.nan_to_num(owner_llr[start:stop].astype(float))
     # Ownership chooses H versus A but cannot, by itself, turn a stoppage live.
@@ -152,10 +138,10 @@ def decode_window(start, stop, base, dead_llr, owner_llr, hard, points, mode,
     return result, len(bounds)
 
 
-def predict_joint(z, F, L2, L3, L4, mode):
+def predict_joint(z, F, L2, L3, L4):
     base = decode(z, L2, L3, L4)
     owner = frame_evidence(L2, L4)
-    selected, triggers = windows(z, L2, L3, base, owner, mode)
+    selected, triggers = windows(z, L2, L3, base)
     outside = np.nan_to_num(F['ball_outside'], nan=0.0) > W.MAX_BALL_OUTSIDE_M
     hard = (z['half'] == 0) | outside
     if 'hard_kickoff' in L3:
@@ -168,13 +154,13 @@ def predict_joint(z, F, L2, L3, L4, mode):
         left = int(base[start - 1]) if start and z['half'][start - 1] == h else None
         right = int(base[stop]) if stop < len(base) and z['half'][stop] == h else None
         revised, n_bounds = decode_window(start, stop, base, L3['dead_llr'], owner,
-                                          hard, points, mode, left, right)
+                                          hard, points, left, right)
         result[start:stop] = revised
         trace.append(dict(start=start, end=stop, boundaries=n_bounds,
                           changed_frames=int(np.sum(revised != base[start:stop])),
                           changed_D_frames=int(np.sum((revised == D) !=
                                                       (base[start:stop] == D)))))
-    return result, dict(variant=mode, windows=trace, triggers=triggers,
+    return result, dict(variant='wes', algorithm='joint-d', windows=trace, triggers=triggers,
                         changed_frames=int(np.sum(result != base)),
                         changed_dead_frames=int(np.sum((result == D) != (base == D))),
                         dead_revisions=[], change_candidates=[])
