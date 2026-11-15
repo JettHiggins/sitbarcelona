@@ -108,6 +108,14 @@
         </details>
         <p class="experiment-caveat">Cyan marks show model disagreements, not confirmed mistakes. Only the public five-minute reference has expected labels; do not use it to choose model settings.</p>
       </section>
+      <section class="experiment-panel" aria-label="Public reference inspection">
+        <details id="public-errors">
+          <summary>Incorrect frames in the public reference window</summary>
+          <p id="public-error-summary">Load a predictions CSV to inspect the public window.</p>
+          <ol id="public-error-list" class="public-error-list"></ol>
+        </details>
+        <p class="experiment-caveat">These are frame-label differences in the published five minutes, not full-match errors or a model-selection score. Audit notes describe Mall's prior evidence, even when another CSV is selected.</p>
+      </section>
     </div>
   </main>
 </body>

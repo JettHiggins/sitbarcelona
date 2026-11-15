@@ -32,6 +32,11 @@
 .experiment-spans li{padding:1px 0}
 .experiment-spans button{color:#d6e7e8;text-align:left;font:10px monospace;line-height:1.4;padding:2px 3px}
 .experiment-spans button:hover,.experiment-spans button:focus-visible{color:#fff;background:#235056;outline:1px solid #73dfe1}
+.public-error-list{max-height:210px;overflow:auto;margin:6px 0 0;padding-left:24px}
+.public-error-list li{padding:3px 0}
+.public-error-list button{color:#ffcb9c;text-align:left;font:10px monospace;line-height:1.4}
+.public-error-list button:hover,.public-error-list button:focus-visible{color:#fff;background:#60402c;outline:1px solid #ffb36b}
+.public-error-list small{display:block;color:#aeb9b8;line-height:1.35}
 .experiment-caveat{margin:7px 0 0;color:#8e9c9e;font-size:10px;line-height:1.35}
 @media(max-width:600px){.experiment-panel{padding:8px}.experiment-toolbar{gap:6px}.experiment-toolbar label{width:100%}.experiment-toolbar select{max-width:none;flex:1 1 130px}.experiment-toolbar button{flex:1 1 80px}.experiment-caveat{font-size:9px}}
 /* Scroll to zoom the timeline; Shift+scroll pans the visible window. */

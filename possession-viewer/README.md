@@ -132,6 +132,14 @@ file picker; it is not uploaded.
 Outside the five-minute public reference there is **no known correct answer**
 in the viewer. Cyan marks are changes, not proven failures. The public labels
 are for alignment checks, never selecting a model or parameter.
+Expand **Incorrect frames in the public reference window** to see every
+contiguous frame-label mismatch for the selected CSV. Click a range to jump
+there in the tactical video. Where a range overlaps a case already discussed
+in [Mall's audit](../pipeline/MALL_PIPELINE_AUDIT.md), the list includes its
+brief audit note; those notes always describe Mall, even if a Wes CSV is selected.
+This list covers only the published five minutes. The 176 wrong-team-majority
+missed possessions in the other-game benchmark have no synchronized video in
+the current sample-data package and cannot be marked as BAR–ATH video errors.
 For the other-game score and missed-possession breakdown, read
 [Wes score analysis](../pipeline/WES_SCORE_ANALYSIS.md).
 

@@ -351,6 +351,7 @@ async function loadCsv(file, source = 'local') {
     setMessage(notes.join(' · ') + '.');
     setFrame(state.frame);
     drawTimeline();
+    updatePublicErrors();
     loadExperimentComparison(parsed, loadVersion);
   } catch (error) {
     if (loadVersion !== state.csvLoadVersion) return;
@@ -389,6 +390,54 @@ function prepareCanvas(canvas) {
 
 function referenceAt(frame) {
   return state.reference?.labels[frame] || null;
+}
+
+const MALL_AUDIT_CASES = [
+  { start: 11351, end: 11466, note: 'Mall audit: late BAR switch; early contact evidence is missing or misattributed.' },
+  { start: 11553, end: 11624, note: 'Mall audit: short ATH possession missed; learned evidence favors BAR.' },
+  { start: 15346, end: 15365, note: 'Mall audit: brief BAR interval missed; weak BAR evidence and switch support.' },
+  { start: 15766, end: 15799, note: 'Mall audit: brief BAR interval missed; attribution and control favor ATH.' },
+  { start: 17047, end: 17380, note: 'Mall audit: dead-ball processing case; inspect the Layer 3 discussion.' },
+];
+
+function updatePublicErrors() {
+  const summary = $('public-error-summary'), list = $('public-error-list');
+  list.replaceChildren();
+  if (!state.reference || !state.predictions) {
+    summary.textContent = 'Load a predictions CSV to inspect the public window.';
+    return;
+  }
+  const expected = state.reference.labels, actual = state.predictions.labels;
+  let wrong = 0, current = null;
+  const spans = [];
+  for (let frame = 0; frame < FRAME_COUNT; frame++) {
+    if (!expected[frame]) continue;
+    if (expected[frame] === actual[frame]) { current = null; continue; }
+    wrong++;
+    if (current && current.end === frame && current.expected === expected[frame] && current.actual === (actual[frame] || 'X')) current.end++;
+    else {
+      current = { start: frame, end: frame + 1, expected: expected[frame], actual: actual[frame] || 'X' };
+      spans.push(current);
+    }
+  }
+  summary.textContent = `${wrong.toLocaleString()} incorrect frames in ${spans.length} exact label-pair ranges. Click a range to inspect video.`;
+  for (const span of spans) {
+    const item = document.createElement('li'), button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = `${formatTime(span.start / FPS)} · f${span.start}–${span.end - 1} · ` +
+      `${((span.end - span.start) / FPS).toFixed(2)} s · expected ${LABELS[span.expected].display}, ` +
+      `predicted ${LABELS[span.actual].display}`;
+    button.addEventListener('click', () => jumpToDifference(span));
+    item.append(button);
+    for (const audit of MALL_AUDIT_CASES) {
+      if (audit.start < span.end && span.start < audit.end) {
+        const note = document.createElement('small');
+        note.textContent = audit.note;
+        item.append(note);
+      }
+    }
+    list.append(item);
+  }
 }
 
 function updateComparison() {
@@ -435,6 +484,7 @@ async function loadReference() {
     $('jump-reference').title = 'Jump to the public five-minute reference window';
     setFrame(state.frame);
     drawTimeline();
+    updatePublicErrors();
   } catch (error) {
     state.referenceError = error.message;
     $('jump-reference').hidden = false;
@@ -1037,6 +1087,7 @@ $('reset-predictions').addEventListener('click', () => {
   drawTimeline();
   updateExperimentSelection();
   updateExperimentPanel();
+  updatePublicErrors();
   setMessage('');
 });
 setPlaybackRate(1);
