@@ -38,9 +38,10 @@ def write_csv(labels, half, path, expected=199319):
 def mall(mode, output, reuse_cache=False):
     import numpy as np
     from .mall.common import CACHE, cache_path, load_layer
-    from .mall.layer4_possession_model.run import bench_tags
-    if mode in ('model', 'boosted', 'interaction') and not set(BENCH_TAGS).issubset(bench_tags()):
-        raise ValueError('Mall model needs all ten bench games. Run python -m pipeline.run prepare-mall --bench-src PATH first, or use --mode events.')
+    from .mall.common import model_tags
+    if mode in ('model', 'boosted', 'interaction') and not set(BENCH_TAGS).issubset(model_tags()):
+        raise ValueError('Mall model needs all ten bench games. Run python -m pipeline.run prepare-mall --bench-src PATH first, '
+                         'install the production checkpoints (python -m pipeline.mall.production; --mode model only), or use --mode events.')
     # Rebuild match stages on every run; do not silently reuse stale caches.
     cache_dir = Path(CACHE)
     cache_dir.mkdir(parents=True, exist_ok=True)

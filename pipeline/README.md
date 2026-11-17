@@ -55,6 +55,10 @@ python -m pipeline.run prepare-mall --bench-src /tmp/metrica-sample-data
 python -m pipeline.run mall --mode model
 ```
 
+To reproduce the shipped `mall-model.csv` without the benchmark or any training, install the
+production checkpoints with `python -m pipeline.mall.production`. Then run `python -m pipeline.run mall --mode model`.
+[`mall/production/README.md`](mall/production/README.md) lists the pinned Python, CUDA and package versions.
+
 Preparation downloads the DFL games once (~2.6 GB into `data/idsse`, gitignored), then builds
 answer keys and layers 0–2 for all ten games. The model run then trains a players-only
 dead-ball model and a trajectory model (a small recurrent network over the raw tracking; needs
