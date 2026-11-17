@@ -35,9 +35,21 @@ def bench_tags():
     return sorted(f[:-7] for f in os.listdir(d) if f.endswith("_gt.csv")) if os.path.isdir(d) else []
 
 
+def model_tags():
+    """Bench games the models were trained on: the prepared bench, or, without one, the games
+    named by installed production checkpoints (python -m pipeline.mall.production)."""
+    tags = bench_tags()
+    path = os.path.join(CACHE, "models", "production.json")
+    if not tags and os.path.isfile(path):
+        import json
+        with open(path, encoding="utf-8") as f:
+            tags = sorted(json.load(f)["train_tags"])
+    return tags
+
+
 def train_tags(tag, prefixes=("bench", "dfl")):
     """Bench games a model for `tag` may learn from: every one but `tag` itself."""
-    return [t for t in bench_tags() if t != tag and t.startswith(tuple(prefixes))]
+    return [t for t in model_tags() if t != tag and t.startswith(tuple(prefixes))]
 
 
 # --- Smart Tagging ------------------------------------------------------------------------------
