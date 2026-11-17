@@ -3,7 +3,7 @@
 Possession implementations feed the existing possession viewer. Run commands from the
 repository root. The shared `mall-model.csv` and `mall-boosted.csv` prediction
 snapshots are tracked in `possession-viewer/data/`; other generated CSVs and caches
-stay local. Viewer code is unchanged.
+stay local. The viewer includes optional Mall/Wes comparison controls.
 
 ## Install and run
 
@@ -26,7 +26,8 @@ python -m pipeline.run mall --mode events
 The data bundle must contain `tactical/BAR-ATH_tactical_atd.txt`,
 `BAR-ATH_tactical_atd.xml`, and `BAR-ATH_tactical_smart_tagging.xml`.
 Alternatively pass `--data-dir /path/to/data` (or its tactical folder) to either run.
-Video is not used by the pipelines.
+The current scoring pipelines use tracking; the optional other-game video audit is
+documented in `wes/video/README.md`.
 
 Outputs default to `possession-viewer/data/lenny-model.csv` and
 `possession-viewer/data/mall-events.csv`. Use `--output PATH` to select another destination.
@@ -72,6 +73,29 @@ model and exports `mall-interaction.csv`, leaving `mall-model.csv` available for
 See [the interaction model](mall/interaction/README.md) for its training protocol, diagnostic
 output, and the explicit `--reuse-cache` option. The original `model` mode remains the default.
 
+### Wes segmentation experiments
+
+`wes` is a single experimental dead-ball revision path integrated from `wes_deadball+video`. It reuses
+Mall's cleaned tracking and trained evidence, then runs the former `joint-d`
+decoder. `mall --mode model` remains the unchanged comparison output. See [Wes usage and architecture](wes/README.md)
+and [the measured experiment log](WES_EXPERIMENT_LOG.md).
+
+```bash
+python -m pipeline.run prepare-mall --bench-src /path/to/metrica-sample-data
+python -m pipeline.wes.evaluate
+python -m pipeline.run wes
+python -m unittest pipeline.wes.test_joint pipeline.wes.test_diagnose
+```
+
+`pipeline/reports/wes/segmentation-evaluation.json` compares Mall and Wes per
+held-out game. The output CSVs have 199,319 rows on the full challenge bundle.
+Wes diagnostics are adjacent `.segmentation.json` files and are Git-ignored.
+The default evaluation compares current ten-game-trained evidence on five held-out
+development games. `--baseline legacy` reproduces the older three-Metrica-game
+comparison with its original decoder weights. Neither mode reads the BAR–ATH
+public five-minute labels. The small historical gain does not establish that Wes
+improves the current trajectory model.
+
 For an independent event-first ownership system, use `python -m pipeline.run event-first`.
 It exports `event-first.csv` without Mall's ownership probabilities or sequence decoder;
 tracking cleanup and dead-ball detection are shared. See [event-first rules and commands](event_first/README.md)
@@ -89,7 +113,7 @@ Every mode has a separate default output filename.
 
 ```bash
 python -m pipeline.compare possession-viewer/data/lenny-model.csv possession-viewer/data/mall-model.csv
-# Optional: official public-sample scores; labels are used only by this comparison command.
+# Optional format/alignment check against public labels; never use this to choose a model or setting.
 python -m pipeline.compare possession-viewer/data/lenny-model.csv possession-viewer/data/mall-model.csv \
   --truth /path/to/challenge/evaluation/gt/BAR-ATH_possession_gt_public.csv
 python -m unittest pipeline.test_adapters pipeline.test_mall_deadball pipeline.lenny.test_invariants

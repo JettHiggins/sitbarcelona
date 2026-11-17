@@ -100,3 +100,11 @@ local and are recreated through these commands.
 
 See [pipeline commands and alternatives](pipeline/README.md) and the
 [optimization experiment results](pipeline/MALL_SCORE90_PROGRESS.md).
+
+The November 17 integration also includes Wes's experimental dead-ball decoder
+and viewer comparisons. `python -m pipeline.run wes` uses the current Mall
+evidence; it is not promoted over Mall without a production-baseline comparison.
+See [Wes evaluation and reproduction](pipeline/wes/README.md).
+The [November 17 integration decision](pipeline/NOV17_INTEGRATION.md) records
+the checks and remaining limitations; [submission artifacts](submission/README.md)
+include the recommended candidate's manifest and a draft technical document.

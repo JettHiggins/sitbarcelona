@@ -81,6 +81,22 @@ def mall(mode, output, reuse_cache=False):
     write_csv(labels, load_layer('layer0')['half'], output)
 
 
+def wes(output, reuse_cache=False):
+    """Run the selected Wes dead-ball decoder with Mall's shared evidence."""
+    from .mall.common import load_layer
+    from .wes.segmentation import predict
+
+    if not reuse_cache:
+        # Rebuild the shared evidence and preserve an explicit Mall comparison CSV.
+        mall('model', ROOT / 'possession-viewer/data/mall-model.csv')
+    z, F, L2, L3, L4 = (load_layer(x) for x in
+                        ('layer0', 'layer1', 'layer2', 'layer3', 'layer4'))
+    labels, diagnostics = predict(z, F, L2, L3, L4)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.with_suffix('.segmentation.json').write_text(json.dumps(diagnostics, indent=2) + '\n')
+    write_csv(labels, z['half'], output)
+
+
 def event_first(output, reuse_cache=False):
     from .event_first.run import build
     from .mall.common import CACHE
@@ -105,6 +121,11 @@ def main():
         if name == 'mall':
             p.add_argument('--reuse-cache', action='store_true',
                            help='Interaction mode only: explicitly reuse existing Mall tracking/model caches')
+    p = subs.add_parser('wes', help='Selected dead-ball segmentation using Mall evidence')
+    p.add_argument('--output', type=Path)
+    p.add_argument('--data-dir', type=Path, help='Data bundle root or tactical folder')
+    p.add_argument('--reuse-cache', action='store_true',
+                   help='Reuse current Mall tracking/model caches; fastest after changing only Wes logic')
     p = subs.add_parser('prepare-mall', help='Build the ten training games and their features')
     p.add_argument('--bench-src', type=Path, required=True, help='Local metrica-sports/sample-data checkout')
     p = subs.add_parser('event-first', help='Independent contact/recovery ownership state machine')
@@ -144,6 +165,17 @@ def main():
             for layer in MALL_LAYERS[:2]:
                 run_module(f'pipeline.mall.{layer}.run', tag)
         from .mall.common import CACHE
+        bench_dir = Path(CACHE) / 'bench'
+        try:
+            source_commit = subprocess.check_output(
+                ['git', '-C', str(args.bench_src.resolve()), 'rev-parse', 'HEAD'],
+                text=True, stderr=subprocess.DEVNULL).strip()
+        except (OSError, subprocess.CalledProcessError):
+            source_commit = None
+        (bench_dir / 'provenance.json').write_text(json.dumps(dict(
+            source=str(args.bench_src.resolve()), source_commit=source_commit,
+            key_method='Metrica event-derived labels with fixed seeds 1001-1003; DFL official ball status and team possession'),
+            indent=2) + '\n')
         model_dir = Path(CACHE) / 'models'
         for pattern in ('design_*.npz', 'deadp_design_*.npz', 'frame_*.pkl', 'cp_*.pkl',
                         'cpf_*.pkl', 'deadp_*.pkl', 'seq_feat_*.npy', 'seq_*.pt'):
@@ -175,9 +207,12 @@ def main():
         output = (args.output or ROOT / 'possession-viewer/data/paper.csv').resolve()
         tactical(output, args.profile, args.status, args.status_file)
         return
-    output = (args.output or ROOT / f'possession-viewer/data/{args.pipeline}-{args.mode}.csv').resolve()
+    default_name = 'wes-model.csv' if args.pipeline == 'wes' else f'{args.pipeline}-{args.mode}.csv'
+    output = (args.output or ROOT / 'possession-viewer/data' / default_name).resolve()
     if args.pipeline == 'mall':
         mall(args.mode, output, args.reuse_cache)
+    elif args.pipeline == 'wes':
+        wes(output, args.reuse_cache)
     else:
         from .lenny import config
         config.OUTPUT = output

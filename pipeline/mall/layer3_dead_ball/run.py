@@ -31,20 +31,23 @@ def build(verbose=True):
         p_learned = p_dead()
     if p_learned is None:                 # no bench to learn from: the rules' own speed cue
         C.DEAD_W_SPEED = C.DEAD_W_SPEED_RULES_ONLY
-    dead, llr, parts = detect(z, F, L2, p_learned)
+    dead, llr, parts, stages = detect(z, F, L2, p_learned, trace=True)
     if p_learned is not None:
         parts["p_learned"] = p_learned
     g = z["half"] > 0
     if verbose:
         print("dead on {:.1%} of graded frames  ({:.0f}s)".format(dead[g].mean(), time.time() - t0))
-    return dead, llr, parts
+    return dead, llr, parts, stages
 
 
 def main():
-    dead, llr, parts = build()
+    dead, llr, parts, stages = build()
     out = cache_path("layer3")
     np.savez_compressed(out, dead=dead, dead_llr=llr.astype(np.float32),
-                        **{"cue_" + k: v.astype(np.float32) for k, v in parts.items()})
+                        hard_kickoff=stages["hard_kickoff"].astype(np.int8),
+                        **{"cue_" + k: v.astype(np.float32) for k, v in parts.items()},
+                        **{"stage_" + k: v.astype(np.int8) for k, v in stages.items()
+                           if k != "hard_kickoff"})
     print("wrote", os.path.relpath(out, ROOT))
 
 

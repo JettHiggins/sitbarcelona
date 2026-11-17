@@ -20,7 +20,7 @@ def evidence_stub(gap_frames, n=2000):
 
 
 class LearnedEvidenceTests(unittest.TestCase):
-    def detect(self, p, gap=slice(300, 600), **settings):
+    def detect(self, p, gap=slice(300, 600), trace=False, **settings):
         n = 2000                                      # two halves; the scene is in the first
         if p is not None:
             p = np.r_[p, np.full(n - len(p), 0.02)]
@@ -35,7 +35,7 @@ class LearnedEvidenceTests(unittest.TestCase):
         for q in patches:
             q.start()
         try:
-            return deadball.detect(z, F, {}, p)
+            return deadball.detect(z, F, {}, p, trace=trace)
         finally:
             for q in patches:
                 q.stop()
@@ -69,6 +69,20 @@ class LearnedEvidenceTests(unittest.TestCase):
         p = np.full(1000, 1e-9)
         _, _, parts = self.detect(p, DEAD_W_LEARNED=1.0, DEAD_LEARNED_CLIP=6.0)
         self.assertEqual(parts["learned"].min(), -6.0)
+
+    def test_wes_trace_preserves_learned_predictions_and_evidence(self):
+        p = np.full(1000, 0.02)
+        p[300:600] = 0.98
+        settings = dict(DEAD_W_LEARNED=1.0, DEAD_GAP_GATE=0.5)
+        plain = self.detect(p, **settings)
+        traced = self.detect(p, trace=True, **settings)
+        for a, b in zip(plain[:2], traced[:2]):
+            np.testing.assert_array_equal(a, b)
+        for key in plain[2]:
+            np.testing.assert_array_equal(plain[2][key], traced[2][key])
+        self.assertIn('learned', traced[2])
+        self.assertTrue(traced[3]['viterbi'][320:580].all())
+        self.assertEqual(set(traced[3]), {'viterbi', 'snapped', 'rules', 'durations', 'hard_kickoff'})
 
 
 class PlayerOnlyFeatureTests(unittest.TestCase):

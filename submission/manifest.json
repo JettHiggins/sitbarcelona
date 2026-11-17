@@ -1,0 +1,12 @@
+{
+  "candidate": "sitbarcelona.csv",
+  "source": "possession-viewer/data/mall-model.csv",
+  "source_commit": "b9d7e31",
+  "sha256": "ce99b78b250e73eaa2f0f6a724d743ef54a47b61da84e6f277ff25a7222d26f9",
+  "rows": 199319,
+  "model": "Mall production trajectory GRU",
+  "selection": "Existing five-game development evidence; no public-window selection or manual frame edits",
+  "new_hybrid_promoted": false,
+  "exact_raw_data_reproduction_verified": false,
+  "limitation": "Author checkpoints and complete originating environment unavailable"
+}

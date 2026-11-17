@@ -7,6 +7,8 @@ async page => {
     '<a href="slow.csv">Slow</a><a href="missing.csv">Missing</a>' +
     '<a href="notes.txt">Notes</a><a href="../outside.csv">Outside</a>' +
     '<a href="nested/ignored.csv">Nested</a><a href="https://example.com/foreign.csv">External</a>';
+  // Exercise the static-host fallback rather than the real server's file inventory.
+  await page.route('**/api/predictions', route => route.fulfill({ status: 404 }));
   await page.route('**/data/', route => route.fulfill({ contentType: 'text/html', body: listing }));
   await page.route('**/data/a.csv', route => route.fulfill({ body: 'frame,label\n11185,A\n' }));
   await page.route('**/data/b%20model.csv', route => route.fulfill({ body: 'frame,label\n11185,H\n' }));
@@ -61,6 +63,7 @@ async page => {
   await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.unrouteAll();
+  await page.route('**/api/predictions', route => route.fulfill({ status: 404 }));
   await page.route('**/data/', route => route.fulfill({ status: 404, body: 'No listing' }));
   await page.reload();
   await page.locator('#prediction-file').setInputFiles('possession-viewer/tests/fixtures/replacement.csv');

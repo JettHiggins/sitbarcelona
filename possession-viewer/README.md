@@ -131,6 +131,32 @@ See [pipeline setup and commands](../pipeline/README.md) to generate `lenny-mode
 `mall-model.csv`, or a model-free `mall-events.csv` locally. Load one using **Predictions CSV**,
 then choose another CSV to compare at the same video frame. Outputs use the same frame timeline.
 
+For the selected Wes model, use **Compare with Mall** below the timeline. Pick
+`model`; the viewer loads `wes-model.csv` and compares it with `mall-model.csv`. **Previous** and **Next**
+jump to exact contiguous disagreement spans. Use the filter to inspect only
+dead/live or H/A changes. Expand **Exact disagreement ranges** to click any
+time and frame range directly. The cyan timeline ticks and dashed cyan line in the
+local trace show disagreement with Mall; amber still means disagreement with
+the public five-minute reference. At the current span, the panel shows both
+labels, frame range, duration, and the experiment's local `.segmentation.json`
+decision when available. Jumping fits that span and five seconds of context on
+each side in the timeline. The tactical video stays in your browser's local
+file picker; it is not uploaded.
+
+Outside the five-minute public reference there is **no known correct answer**
+in the viewer. Cyan marks are changes, not proven failures. The public labels
+are for alignment checks, never selecting a model or parameter.
+Expand **Incorrect frames in the public reference window** to see every
+contiguous frame-label mismatch for the selected CSV. Click a range to jump
+there in the tactical video. Where a range overlaps a case already discussed
+in [Mall's audit](../pipeline/MALL_PIPELINE_AUDIT.md), the list includes its
+brief audit note; those notes always describe Mall, even if a Wes CSV is selected.
+This list covers only the published five minutes. The 176 wrong-team-majority
+missed possessions in the other-game benchmark have no synchronized video in
+the current sample-data package and cannot be marked as BAR–ATH video errors.
+For the other-game score and missed-possession breakdown, read
+[Wes score analysis](../pipeline/WES_SCORE_ANALYSIS.md).
+
 ## Public ground-truth overlay
 
 The public five-minute reference loads automatically: frames **11185–18684** (25 fps).
@@ -150,7 +176,9 @@ retains the reference. Reference labels are for visual evaluation only and do no
 Browser regression checks (with `playwright-cli` installed and the viewer served on port 8080):
 
 ```bash
+node possession-viewer/tests/comparison.js
 playwright-cli open http://localhost:8080
+playwright-cli run-code --filename=possession-viewer/tests/comparison-browser.js
 playwright-cli run-code --filename=possession-viewer/tests/ground-truth.js
 playwright-cli run-code --filename=possession-viewer/tests/csv-picker.js
 playwright-cli run-code --filename=possession-viewer/tests/timeline-zoom.js

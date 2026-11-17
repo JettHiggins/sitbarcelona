@@ -62,6 +62,31 @@ class CachedPredictionsTests(unittest.TestCase):
 
 
 class TemporalModelTests(unittest.TestCase):
+    def test_linear_dilation_matches_convolution_outputs_and_gradients(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("PyTorch not installed")
+        from .mall.layer4_possession_model.temporal import build_net
+        torch.set_num_threads(1)
+        torch.manual_seed(3)
+        net = build_net(3, hidden=4, blocks=3).double()
+        for block in net.blocks:
+            for conv in (block.conv1, block.conv2):
+                reference = torch.nn.Conv1d(4, 4, 3, padding=conv.d,
+                                            dilation=conv.d).double()
+                with torch.no_grad():
+                    reference.weight.copy_(conv.lin.weight.reshape(4, 3, 4).permute(0, 2, 1))
+                    reference.bias.copy_(conv.lin.bias)
+                for length in (1, 11):
+                    x = torch.randn(2, length, 4, dtype=torch.float64, requires_grad=True)
+                    actual = conv(x)
+                    expected = reference(x.transpose(1, 2)).transpose(1, 2)
+                    torch.testing.assert_close(actual, expected, atol=1e-12, rtol=1e-12)
+                    da = torch.autograd.grad(actual.square().sum(), x)[0]
+                    de = torch.autograd.grad(expected.square().sum(), x)[0]
+                    torch.testing.assert_close(da, de, atol=1e-12, rtol=1e-12)
+
     def test_chunked_prediction_preserves_team_symmetry(self):
         try:
             import torch
