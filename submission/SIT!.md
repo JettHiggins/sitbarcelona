@@ -1,4 +1,4 @@
-# Possession estimation from tracking
+# SIT! — Possession estimation from tracking
 
 ## Approach and inputs
 
@@ -30,9 +30,8 @@ Training uses ten other matches: three open Metrica Sports sample games and
 seven DFL Bundesliga games from the Bassek et al. 2025 dataset. Metrica labels
 are derived algorithmically from the published event annotations; DFL labels
 come from the provider's ball-status and possession fields. This project did
-not create new human labels. The exact number of supervised frames is not
-recorded in the supplied production export; the preparation code constructs
-the frame-level keys from the source feeds.
+not create new human labels. The preparation code constructs frame-level
+training keys for these ten matches from the source feeds.
 
 Sources and parsing are documented in `pipeline/mall/bench/README.md`,
 `metrica.py`, `labels.py` and `idsse.py`. The Metrica source revision is

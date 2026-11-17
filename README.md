@@ -107,7 +107,7 @@ evidence; it is not promoted over Mall without a production-baseline comparison.
 See [Wes evaluation and reproduction](pipeline/wes/README.md).
 The [November 17 integration decision](pipeline/NOV17_INTEGRATION.md) records
 the checks and remaining limitations; [submission artifacts](submission/README.md)
-include the recommended candidate's manifest and a draft technical document.
+include the recommended candidate's manifest and final technical document for SIT!.
 
 Production checkpoints are now bundled. To reproduce the selected CSV without
 training or downloading benchmark games, use the pinned environment and

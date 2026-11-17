@@ -1,5 +1,5 @@
 {
-  "candidate": "sitbarcelona.csv",
+  "candidate": "SIT!.csv",
   "source": "possession-viewer/data/mall-model.csv",
   "source_commit": "b9d7e31",
   "sha256": "ce99b78b250e73eaa2f0f6a724d743ef54a47b61da84e6f277ff25a7222d26f9",
@@ -9,5 +9,8 @@
   "new_hybrid_promoted": false,
   "exact_raw_data_reproduction_verified": true,
   "production_checkpoint_commit": "73575805c482cb3a533acdd26f6e59fb8716dbfd",
-  "verification": "reproduction-verification.json"
+  "verification": "reproduction-verification.json",
+  "team_name": "SIT!",
+  "technical_document": "SIT!.md",
+  "repository_url": "https://github.com/JettHiggins/sitbarcelona"
 }
