@@ -17,10 +17,15 @@ the exact upload file too. This candidate passed that validator: 199,319 ordered
 rows, 40,462 X frames outside the halves and no abstentions inside them.
 `manifest.json` records its source and checksum.
 
-The draft technical document explains the algorithm and its limitations. The
-author's trained checkpoints are unavailable, so bit-exact inference replay
-from raw inputs is still unverified. The repository preserves the exact
-prediction artifact, but that does not establish raw-data reproducibility.
+The draft technical document explains the algorithm and its limitations.
+The author's production checkpoints, input/model/output hashes and pinned
+production requirements are now bundled. Follow
+`pipeline/mall/production/README.md` for inference from raw inputs without
+benchmark downloads or training. The author reports byte-identical reproduction
+from a clean worktree in the recorded Windows/CUDA environment.
+An independent replay of the merged code on Linux ARM64 CPU also regenerated
+the candidate byte for byte from raw inputs with an initially empty cache.
+See `reproduction-verification.json` and `cpu-verification-environment.txt`.
 
 The submission form also needs the public repository URL. Local integration
 commits must be pushed before that URL contains this work. No form submission

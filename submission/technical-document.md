@@ -84,7 +84,28 @@ It contains 199,319 ordered predictions. It is not a newly trained hybrid.
 
 The author's recorded environment includes Python 3.10.11, NumPy 1.26.4,
 SciPy 1.14.1, scikit-learn 1.5.2 and PyTorch 2.6.0+cu124 on an RTX 4060 Laptop
-GPU. The full pinned originating environment and trained checkpoints were not
-provided. The exact output is preserved in Git, but bit-exact regeneration
-from raw data on another machine has not been verified and may vary by device.
-This is a remaining gap against the competition's exact-reproduction requirement.
+GPU. The production GRU and players-only dead-ball checkpoints are bundled in
+`pipeline/mall/production/`, with their hashes, raw-input hashes and output hash
+in `MANIFEST.json`. Direct dependency versions are pinned in
+`pipeline/requirements-production.txt`; the PyTorch version and installation
+command are specified separately in the production README.
+
+For inference without benchmark downloads or training, follow
+`pipeline/mall/production/README.md`: create the production environment, run
+`python -m pipeline.mall.production` to verify and install the checkpoints, then
+run `python -m pipeline.run mall --mode model --data-dir PATH --output OUTPUT.csv`
+from a clean checkout without prepared benchmark caches. Existing prepared
+benchmark tags take precedence over the installed checkpoint manifest.
+
+The author reports byte-for-byte reproduction from raw inputs in a fresh
+worktree with an empty cache, using the recorded Windows/CUDA environment.
+Numerical behavior on other hardware can differ; the expected output hash
+above is the verification target.
+
+An independent check of the integrated code at `ac6c5cf` also regenerated the
+CSV byte for byte on Linux ARM64 CPU, using Python 3.10.22, PyTorch 2.6.0+cpu
+and the other pinned direct dependencies. The checkout began with an empty
+cache and no prepared benchmark games; all preprocessing was rerun from the
+three raw inputs and the bundled models. The generated output passed format
+and half-mask validation and matched the expected SHA-256 exactly. The resolved
+CPU environment and verification record are included under `submission/`.

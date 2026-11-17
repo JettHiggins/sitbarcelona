@@ -7,6 +7,7 @@
   "model": "Mall production trajectory GRU",
   "selection": "Existing five-game development evidence; no public-window selection or manual frame edits",
   "new_hybrid_promoted": false,
-  "exact_raw_data_reproduction_verified": false,
-  "limitation": "Author checkpoints and complete originating environment unavailable"
+  "exact_raw_data_reproduction_verified": true,
+  "production_checkpoint_commit": "73575805c482cb3a533acdd26f6e59fb8716dbfd",
+  "verification": "reproduction-verification.json"
 }

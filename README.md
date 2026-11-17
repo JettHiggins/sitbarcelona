@@ -108,3 +108,8 @@ See [Wes evaluation and reproduction](pipeline/wes/README.md).
 The [November 17 integration decision](pipeline/NOV17_INTEGRATION.md) records
 the checks and remaining limitations; [submission artifacts](submission/README.md)
 include the recommended candidate's manifest and a draft technical document.
+
+Production checkpoints are now bundled. To reproduce the selected CSV without
+training or downloading benchmark games, use the pinned environment and
+empty-cache inference instructions in
+[the production checkpoint guide](pipeline/mall/production/README.md).

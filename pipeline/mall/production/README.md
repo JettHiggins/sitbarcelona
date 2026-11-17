@@ -27,7 +27,8 @@ they were made in.
 The dead-ball model is a pickle, so it needs **scikit-learn 1.5.2**. A newer
 `pipeline/requirements-tested.txt` environment may fail to load it. A GPU is not required:
 inference falls back to the CPU, which is slower. The CPU output has not been checked against
-the CSV.
+the CSV by the original author. The integrated repository was independently
+verified on Linux ARM64 CPU below.
 
 ```bash
 python -m venv .venv-prod && . .venv-prod/bin/activate     # Windows: .venv-prod\Scripts\activate
@@ -72,6 +73,15 @@ then ran the two commands above with the environment listed here. The result mat
 committed `mall-model.csv` byte for byte (SHA-256 `ce99b78b…`). The run took 2.9 minutes on the
 RTX 4060. All derived data goes to `pipeline/cache/mall/`, which is gitignored and safe
 to delete. The run needs about 8 GB of free RAM.
+
+**Independent integrated-code verification, 2026-11-17:** a fresh worktree at
+`ac6c5cf`, with an initially empty cache and no prepared benchmark games, also
+reproduced the exact same CSV on Linux ARM64 using Python 3.10.22 and
+PyTorch 2.6.0+cpu. All three raw-input hashes and both checkpoint hashes matched
+this manifest. The run used `OMP_NUM_THREADS=2` and `OPENBLAS_NUM_THREADS=2`,
+with the other direct requirements pinned as above. Its resolved environment
+is recorded in `submission/cpu-verification-environment.txt`, and the evidence
+is in `submission/reproduction-verification.json`. No training was performed.
 
 ## Cache notes
 

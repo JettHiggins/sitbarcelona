@@ -71,4 +71,29 @@ The source includes training and inference commands, but the author's production
 checkpoints and complete originating environment are not supplied. Training on
 another device can change the final CSV. The shipped snapshot is byte-identical
 and auditable; bit-exact regeneration from raw match data has not been verified.
-Resolve that limitation for the competition's exact-reproduction requirement.
+This was the state before the checkpoint update below.
+
+## Production checkpoint update
+
+Lenny's `7357580` now supplies the production GRU and learned dead-ball models,
+SHA-256 hashes for both checkpoints and all three raw input files, pinned
+production requirements and inference-only installation commands. Both bundled
+checkpoint hashes and all three local raw-input hashes match the manifest.
+The author reports byte-identical reproduction in a clean worktree with an
+empty cache on his recorded Windows/CUDA environment. The update merges cleanly
+with the integrated code, and all 104 pipeline tests still pass.
+
+The author-supplied checkpoints enable challenge inference without downloading
+or training on the benchmark data. They do not supply the nine-game-exclusion
+models needed to complete the current production Mall/Wes development comparison.
+The selected submission CSV remains unchanged.
+
+An independent clean replay of the integrated code at `ac6c5cf` completed on
+Linux ARM64 CPU with Python 3.10.22 and PyTorch 2.6.0+cpu. It started with no
+tracking caches or benchmark data, installed the bundled checkpoints, and
+rebuilt all six layers from the raw challenge tracking and Smart Tagging files.
+The generated CSV is byte-identical to the selected submission snapshot:
+`ce99b78b250e73eaa2f0f6a724d743ef54a47b61da84e6f277ff25a7222d26f9`.
+The raw-data reproduction gap identified earlier is therefore closed for this
+verified environment. See `submission/reproduction-verification.json` and the
+resolved CPU environment file for the recorded evidence.

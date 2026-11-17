@@ -1,0 +1,33 @@
+{
+  "verified_utc_date": "2026-11-17",
+  "code_commit": "ac6c5cf",
+  "initial_state": "fresh detached worktree; empty model/tracking cache; no prepared benchmark games",
+  "platform": "Linux ARM64",
+  "python": "3.10.22",
+  "torch": "2.6.0+cpu",
+  "environment_file": "cpu-verification-environment.txt",
+  "environment_sha256": "2a2878e67f065e085f41483b4e0e4e7595e38aabf5f1ec1e9cc525a4e7ac4ffe",
+  "threads": {
+    "OMP_NUM_THREADS": 2,
+    "OPENBLAS_NUM_THREADS": 2
+  },
+  "commands": [
+    "python -m pipeline.mall.production",
+    "python -m pipeline.run mall --mode model --data-dir PATH_TO_CHALLENGE_BUNDLE --output OUTPUT.csv"
+  ],
+  "all_three_input_hashes_match": true,
+  "both_checkpoint_hashes_match": true,
+  "raw_preprocessing_rebuilt": true,
+  "training_performed": false,
+  "output_sha256": "ce99b78b250e73eaa2f0f6a724d743ef54a47b61da84e6f277ff25a7222d26f9",
+  "byte_identical": true,
+  "rows": 199319,
+  "labels": {
+    "H": 49630,
+    "A": 29526,
+    "D": 79701,
+    "X": 40462
+  },
+  "abstentions_inside_halves": 0,
+  "non_X_outside_halves": 0
+}
